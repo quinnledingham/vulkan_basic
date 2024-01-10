@@ -33,6 +33,41 @@ const char *device_extensions[1] = {
 	VK_KHR_SWAPCHAIN_EXTENSION_NAME
 };
 
+template<typename T>
+struct Arr {
+	T *data;
+	u32 size;  // number of elements of memory allocated at data
+	u32 count; // number of elements added to memory at data
+
+	u32 data_size;
+	u32 type_size;
+
+	T& operator [] (int i) { 
+		if (i >= (int)size) {
+			print("WARNING: tried to access memory outside of Arr range. Returned last element instead\n");
+			return data[size - 1];
+		}
+
+		return data[i]; 
+	}
+
+	T operator [] (int i) const {
+		return (T)data[i];
+	}
+};
+
+template<typename T>
+internal void
+arr_resize(Arr<T> *arr, u32 size) {
+	if (arr->data == 0)
+		platform_free(arr->data);
+	arr->type_size = sizeof(T);
+	arr->data_size = arr->type_size * size;
+	arr->data = (T*)platform_malloc(arr->data_size);
+	arr->size = size;
+	arr->count = 0;
+}
+
 struct Vulkan_Info {
 	Vulkan_Validation_Layers validation_layers;
 	Vulkan_Swap_Chain_Support_Details swap_chain_support_details;
@@ -40,6 +75,21 @@ struct Vulkan_Info {
 	VkInstance instance;
 	VkPhysicalDevice physical_device;
 	VkDevice device;
+	VkRenderPass render_pass;
+	VkPipelineLayout pipeline_layout;
+	VkPipeline graphics_pipeline;
+
+	VkCommandPool command_pool;
+	VkCommandBuffer command_buffer;
+
+	VkSwapchainKHR swap_chain;
+	VkImage *swap_chain_images;
+	u32 swap_chain_images_count;
+	VkFormat swap_chain_image_format;
+	VkExtent2D swap_chain_extent;
+
+	Arr<VkImageView> swap_chain_image_views;
+	Arr<VkFramebuffer> swap_chain_framebuffers;
 
 	VkQueue graphics_queue;
 	VkQueue present_queue;
@@ -47,5 +97,10 @@ struct Vulkan_Info {
 	VkSurfaceKHR surface;
 
 	u32 instance_extensions_count;
-	const char *instance_extensions[2];
+	const char **instance_extensions;
+
+	// Sync
+	VkSemaphore image_available_semaphore;
+	VkSemaphore render_finished_semaphore;
+	VkFence in_flight_fence;
 };

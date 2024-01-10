@@ -46,10 +46,47 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #include "print.h"
 #include "types_math.h"
 #include "char_array.h"
+#include "assets.h"
 #include "vulkan.h"
 
 #include "print.cpp"
+#include "assets.cpp"
 #include "vulkan.cpp"
+
+internal void
+sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
+	if (SDL_Vulkan_GetInstanceExtensions(sdl_window, &info->instance_extensions_count, NULL) == SDL_FALSE) {
+		logprint("main", "nullptr SDL_Vulkan_GetInstanceExtensions failed\n");
+	}
+	info->instance_extensions = ARRAY_MALLOC(const char *, info->instance_extensions_count);
+	if (SDL_Vulkan_GetInstanceExtensions(sdl_window, &info->instance_extensions_count, info->instance_extensions) == SDL_FALSE) {
+		logprint("main", "SDL_Vulkan_GetInstanceExtensions failed\n");
+	}
+	
+	if (info->validation_layers.enable && !vulkan_check_validation_layer_support(info->validation_layers)) {
+		logprint("vulkan_init()", "validation layers requested, but not avaiable\n");
+	}
+
+	vulkan_create_instance(info);
+
+	if (SDL_Vulkan_CreateSurface(sdl_window, info->instance, &info->surface) == SDL_FALSE) {
+		logprint("main", "vulkan surface failed being created\n");
+	}
+
+	vulkan_pick_physical_device(info);
+	vulkan_create_logical_device(info);
+	s32 window_width;
+    s32 window_height;
+    SDL_GetWindowSize(sdl_window, &window_width, &window_height);
+	vulkan_create_swap_chain(info, window_width, window_height);
+	vulkan_create_image_views(info);
+	vulkan_create_render_pass(info);
+	vulkan_create_graphics_pipeline(info);
+	vulkan_create_frame_buffers(info);
+	vulkan_create_command_pool(info);
+	vulkan_create_command_buffer(info);
+	vulkan_create_sync_objects(info);
+}
 
 internal bool8
 sdl_process_input() {
@@ -98,38 +135,29 @@ int main(int argc, char *argv[]) {
     	return 1;
     }
 
+    s32 window_width;
+    s32 window_height;
+    SDL_GetWindowSize(sdl_window, &window_width, &window_height);
+
     #ifdef OPENGL
 
     #elif VULKAN
-    	Vulkan_Info vulkan_info;
-    	//vulkan_info.extensions = ARRAY_MALLOC(const char *, 10);
-    	if (SDL_Vulkan_GetInstanceExtensions(sdl_window, &vulkan_info.instance_extensions_count, vulkan_info.instance_extensions) == SDL_FALSE) {
-    		logprint("main", "SDL_Vulkan_GetInstanceExtensions failed\n");
-    	}
-    	
-    	if (vulkan_info.validation_layers.enable && !vulkan_check_validation_layer_support(vulkan_info.validation_layers)) {
-			logprint("vulkan_init()", "validation layers requested, but not avaiable\n");
-		}
-
-		vulkan_create_instance(&vulkan_info);
-
-		if (SDL_Vulkan_CreateSurface(sdl_window, vulkan_info.instance, &vulkan_info.surface) == SDL_FALSE) {
-			logprint("main", "vulkan surface failed being created\n");
-		}
-
-		vulkan_pick_physical_device(&vulkan_info);
-		vulkan_create_logical_device(&vulkan_info);
+		Vulkan_Info vulkan_info = {};
+    	sdl_init_vulkan(&vulkan_info, sdl_window);
     #endif
 
     while(1) {
     	if (sdl_process_input())
     		break;
+
+		vulkan_draw_frame(&vulkan_info);
     }
 
     #ifdef OPENGL
 
     #elif VULKAN
-    	//vkDestroyInstance(instance, nullptr);
+		vkDeviceWaitIdle(vulkan_info.device);
+    	vulkan_cleanup(&vulkan_info);
     #endif
 
     SDL_DestroyWindow(sdl_window);
