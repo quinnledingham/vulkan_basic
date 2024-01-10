@@ -268,12 +268,12 @@ vulkan_choose_swap_extent(const VkSurfaceCapabilitiesKHR &capabilities, u32 wind
 }
 
 internal void
-vulkan_create_swap_chain(Vulkan_Info *info, u32 window_width, u32 window_height) {
+vulkan_create_swap_chain(Vulkan_Info *info) {
 	Vulkan_Swap_Chain_Support_Details swap_chain_support = vulkan_query_swap_chain_support(info->physical_device, info->surface);
 
 	VkSurfaceFormatKHR surface_format = vulkan_choose_swap_surface_format(swap_chain_support.formats, swap_chain_support.formats_count);
 	VkPresentModeKHR present_mode = vulkan_choose_swap_present_mode(swap_chain_support.present_modes, swap_chain_support.present_modes_count);
-	VkExtent2D extent = vulkan_choose_swap_extent(swap_chain_support.capabilities, window_width, window_height);
+	VkExtent2D extent = vulkan_choose_swap_extent(swap_chain_support.capabilities, info->window_width, info->window_height);
 
 	u32 image_count = swap_chain_support.capabilities.minImageCount + 1;
 	if (swap_chain_support.capabilities.maxImageCount > 0 && image_count > swap_chain_support.capabilities.maxImageCount) {
@@ -438,12 +438,28 @@ vulkan_create_graphics_pipeline(Vulkan_Info *info) {
 	dynamic_state.dynamicStateCount = ARRAY_COUNT(dynamic_states);
 	dynamic_state.pDynamicStates = dynamic_states;
 
+	// Vertex Input description
+	VkVertexInputBindingDescription binding_description = {};
+	binding_description.binding = 0;
+	binding_description.stride = sizeof(Vertex);
+	binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	
+	VkVertexInputAttributeDescription attribute_descriptions[2] = {};
+	attribute_descriptions[0].binding = 0;
+	attribute_descriptions[0].location = 0;
+	attribute_descriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+	attribute_descriptions[0].offset = offsetof(Vertex, pos);
+	attribute_descriptions[1].binding = 0;
+	attribute_descriptions[1].location = 1;
+	attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+	attribute_descriptions[1].offset = offsetof(Vertex, color);	
+
 	VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
 	vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertex_input_info.vertexBindingDescriptionCount = 0;
-	vertex_input_info.pVertexBindingDescriptions = nullptr; // Optional
-	vertex_input_info.vertexAttributeDescriptionCount = 0;
-	vertex_input_info.pVertexAttributeDescriptions = nullptr; // Optional
+	vertex_input_info.vertexBindingDescriptionCount = 1;
+	vertex_input_info.pVertexBindingDescriptions = &binding_description; // Optional
+	vertex_input_info.vertexAttributeDescriptionCount = 2;
+	vertex_input_info.pVertexAttributeDescriptions = attribute_descriptions; // Optional
 
 	VkPipelineInputAssemblyStateCreateInfo input_assembly = {};
 	input_assembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -587,13 +603,16 @@ vulkan_create_command_pool(Vulkan_Info *info) {
 }
 
 internal void
-vulkan_create_command_buffer(Vulkan_Info *info) {
+vulkan_create_command_buffers(Vulkan_Info *info) {
+	arr_resize(&info->command_buffers, info->MAX_FRAMES_IN_FLIGHT);
+
 	VkCommandBufferAllocateInfo alloc_info = {};
 	alloc_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	alloc_info.commandPool = info->command_pool;
 	alloc_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	alloc_info.commandBufferCount = 1;
-	if (vkAllocateCommandBuffers(info->device, &alloc_info, &info->command_buffer) != VK_SUCCESS) {
+	alloc_info.commandBufferCount = info->MAX_FRAMES_IN_FLIGHT;
+
+	if (vkAllocateCommandBuffers(info->device, &alloc_info, &info->command_buffers.get_data()) != VK_SUCCESS) {
 		logprint("vulkan_create_command_buffer()", "failed to allocate command buffers\n");
 	}
 }
@@ -636,7 +655,11 @@ vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, 
 	scissor.extent = info->swap_chain_extent;
 	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
-	vkCmdDraw(command_buffer, 3, 1, 0, 0);
+	VkBuffer vertex_buffers[] = { info->vertex_buffer };
+	VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+
+	vkCmdDraw(command_buffer, ARRAY_COUNT(vertices), 1, 0, 0);
 
 	vkCmdEndRenderPass(command_buffer);
 
@@ -647,6 +670,10 @@ vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, 
 
 internal void
 vulkan_create_sync_objects(Vulkan_Info *info) {
+	arr_resize(&info->image_available_semaphore, info->MAX_FRAMES_IN_FLIGHT);
+	arr_resize(&info->render_finished_semaphore, info->MAX_FRAMES_IN_FLIGHT);
+	arr_resize(&info->in_flight_fence, info->MAX_FRAMES_IN_FLIGHT);
+
 	VkSemaphoreCreateInfo semaphore_info = {};
 	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -654,47 +681,148 @@ vulkan_create_sync_objects(Vulkan_Info *info) {
 	fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 	fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-	if (vkCreateSemaphore(info->device, &semaphore_info, nullptr, &info->image_available_semaphore) != VK_SUCCESS ||
-    	vkCreateSemaphore(info->device, &semaphore_info, nullptr, &info->render_finished_semaphore) != VK_SUCCESS ||
-    	vkCreateFence    (info->device, &fence_info,     nullptr, &info->in_flight_fence          ) != VK_SUCCESS) {
-    	logprint("vulkan_create_sync_objects()", "failed to create semaphores\n");
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		if (vkCreateSemaphore(info->device, &semaphore_info, nullptr, &info->image_available_semaphore[i]) != VK_SUCCESS ||
+	    	vkCreateSemaphore(info->device, &semaphore_info, nullptr, &info->render_finished_semaphore[i]) != VK_SUCCESS ||
+	    	vkCreateFence    (info->device, &fence_info,     nullptr, &info->in_flight_fence[i]          ) != VK_SUCCESS) {
+	    	logprint("vulkan_create_sync_objects()", "failed to create semaphores\n");
+		}
 	}
+}
+
+internal u32
+vulkan_find_memory_type(VkPhysicalDevice physical_device, u32 type_filter, VkMemoryPropertyFlags properties) {
+	VkPhysicalDeviceMemoryProperties memory_properties;
+	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
+
+	for (u32 i = 0; i < memory_properties.memoryTypeCount; i++) {
+		if (type_filter & (1 << i) && (memory_properties.memoryTypes[i].propertyFlags & properties) == properties) {
+			return i;
+		}
+	}
+
+	logprint("vulkan_find_memory_type()", "failed to find suitable memory type\n");
+	return 0;
+}
+
+internal void
+vulkan_create_vertex_buffer(Vulkan_Info *info) {
+	VkBufferCreateInfo buffer_info = {};
+	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer_info.size = sizeof(vertices[0]) * ARRAY_COUNT(vertices);
+	buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+	if (vkCreateBuffer(info->device, &buffer_info, nullptr, &info->vertex_buffer) != VK_SUCCESS) {
+		logprint("vulkan_create_vertex_buffer()", "failed to create vertex buffer\n");
+	}
+
+	VkMemoryRequirements memory_requirements;
+	vkGetBufferMemoryRequirements(info->device, info->vertex_buffer, &memory_requirements);
+
+	VkMemoryAllocateInfo alloc_info = {};
+	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	alloc_info.allocationSize = memory_requirements.size;
+	alloc_info.memoryTypeIndex = vulkan_find_memory_type(info->physical_device, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+	if (vkAllocateMemory(info->device, &alloc_info, nullptr, &info->vertex_buffer_memory) != VK_SUCCESS) {
+		logprint("vulkan_create_vertex_buffer()", "failed to allocate vertex buffer memory\n");
+	}
+
+	vkBindBufferMemory(info->device, info->vertex_buffer, info->vertex_buffer_memory, 0);
+
+	void *data;
+	vkMapMemory(info->device, info->vertex_buffer_memory, 0, buffer_info.size, 0, &data);
+	memcpy(data, vertices, buffer_info.size);
+	vkUnmapMemory(info->device, info->vertex_buffer_memory);
+}
+
+internal void
+vulkan_cleanup_swap_chain(Vulkan_Info *info) {
+	for (u32 i = 0; i < info->swap_chain_framebuffers.count; i++) {
+		vkDestroyFramebuffer(info->device, info->swap_chain_framebuffers[i], nullptr);
+	}
+
+	for (u32 i = 0; i < info->swap_chain_image_views.count; i++) {
+		vkDestroyImageView(info->device, info->swap_chain_image_views[i], nullptr);
+	}
+
+	vkDestroySwapchainKHR(info->device, info->swap_chain, nullptr);
+}
+
+internal void
+vulkan_recreate_swap_chain(Vulkan_Info *info) {
+	if (info->window_width == 0 || info->window_height == 0) {
+		SDL_Event event;
+		SDL_WindowEvent *window_event = &event.window;
+		info->window_width = window_event->data1;
+		info->window_height = window_event->data2;
+		SDL_WaitEvent(&event);
+		int i = 0;
+	}
+
+	vkDeviceWaitIdle(info->device);
+
+	vulkan_cleanup_swap_chain(info);
+
+	vulkan_create_swap_chain(info);
+	vulkan_create_image_views(info);
+	vulkan_create_frame_buffers(info);
 }
 
 internal void
 vulkan_cleanup(Vulkan_Info *info) {
-	vkDestroySemaphore(info->device, info->image_available_semaphore, nullptr);
-    vkDestroySemaphore(info->device, info->render_finished_semaphore, nullptr);
-    vkDestroyFence(info->device, info->in_flight_fence, nullptr);
-	vkDestroyCommandPool(info->device, info->command_pool, nullptr);
-	for (u32 i = 0; i < info->swap_chain_framebuffers.count; i++) {
-		vkDestroyFramebuffer(info->device, info->swap_chain_framebuffers[0], nullptr);
-	}	
+	vulkan_cleanup_swap_chain(info);
+
+	// Vertex buffer
+	vkDestroyBuffer(info->device, info->vertex_buffer, nullptr);
+	vkFreeMemory(info->device, info->vertex_buffer_memory, nullptr);
+
 	vkDestroyPipeline(info->device, info->graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(info->device, info->pipeline_layout, nullptr);
+	
 	vkDestroyRenderPass(info->device, info->render_pass, nullptr);
-	for (u32 i = 0; i < info->swap_chain_image_views.count; i++) {
-		vkDestroyImageView(info->device, info->swap_chain_image_views[0], nullptr);
+
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		vkDestroySemaphore(info->device, info->image_available_semaphore[i], nullptr);
+	    vkDestroySemaphore(info->device, info->render_finished_semaphore[i], nullptr);
+	    vkDestroyFence(info->device, info->in_flight_fence[i], nullptr);
 	}
-	vkDestroySwapchainKHR(info->device, info->swap_chain, nullptr);
+	
+	vkDestroyCommandPool(info->device, info->command_pool, nullptr);
+
 	vkDestroyDevice(info->device, nullptr);
+
+	vkDestroySurfaceKHR(info->instance, info->surface, nullptr);
+	vkDestroyInstance(info->instance, nullptr);
 }
 
 internal void
 vulkan_draw_frame(Vulkan_Info *info) {
+	if (info->minimized)
+		return;
+
 	// Waiting for the previous frame
-	vkWaitForFences(info->device, 1, &info->in_flight_fence, VK_TRUE, UINT64_MAX);
-    vkResetFences(info->device, 1, &info->in_flight_fence);
+	vkWaitForFences(info->device, 1, &info->in_flight_fence[info->current_frame], VK_TRUE, UINT64_MAX);
 	
 	u32 image_index;
-	vkAcquireNextImageKHR(info->device, info->swap_chain, UINT64_MAX, info->image_available_semaphore, VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(info->device, info->swap_chain, UINT64_MAX, info->image_available_semaphore[info->current_frame], VK_NULL_HANDLE, &image_index);
 	
-	vkResetCommandBuffer(info->command_buffer, 0);
-	vulkan_record_command_buffer(info, info->command_buffer, image_index);
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		vulkan_recreate_swap_chain(info);
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
+	}
+
+	vkResetFences(info->device, 1, &info->in_flight_fence[info->current_frame]);
+
+	vkResetCommandBuffer(info->command_buffers[info->current_frame], 0);
+	vulkan_record_command_buffer(info, info->command_buffers[info->current_frame], image_index);
 
 	// Submitting the command buffer
-	VkSemaphore wait_semaphores[] = { info->image_available_semaphore };
-	VkSemaphore signal_semaphores[] = { info->render_finished_semaphore };
+	VkSemaphore wait_semaphores[] = { info->image_available_semaphore[info->current_frame] };
+	VkSemaphore signal_semaphores[] = { info->render_finished_semaphore[info->current_frame] };
 	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 
 	VkSubmitInfo submit_info = {};
@@ -703,11 +831,11 @@ vulkan_draw_frame(Vulkan_Info *info) {
 	submit_info.pWaitSemaphores = wait_semaphores;
 	submit_info.pWaitDstStageMask = wait_stages;
 	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &info->command_buffer;	
+	submit_info.pCommandBuffers = &info->command_buffers[info->current_frame];	
 	submit_info.signalSemaphoreCount = 1;
 	submit_info.pSignalSemaphores = signal_semaphores;
 
-	if (vkQueueSubmit(info->graphics_queue, 1, &submit_info, info->in_flight_fence) != VK_SUCCESS) {
+	if (vkQueueSubmit(info->graphics_queue, 1, &submit_info, info->in_flight_fence[info->current_frame]) != VK_SUCCESS) {
 		logprint("vulkan_draw_frame()", "failed to submit draw command buffer\n");
 	}
 
@@ -723,5 +851,15 @@ vulkan_draw_frame(Vulkan_Info *info) {
 	present_info.pImageIndices = &image_index;
 	present_info.pResults = nullptr; // Optional
 
-	vkQueuePresentKHR(info->present_queue, &present_info);
+	result = vkQueuePresentKHR(info->present_queue, &present_info);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || info->framebuffer_resized) {
+		info->framebuffer_resized = false;
+		vulkan_recreate_swap_chain(info);
+		return;
+	} else if (result != VK_SUCCESS) {
+		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
+	}
+
+	info->current_frame = (info->current_frame + 1) % info->MAX_FRAMES_IN_FLIGHT;
 }

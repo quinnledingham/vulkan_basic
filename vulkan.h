@@ -54,6 +54,10 @@ struct Arr {
 	T operator [] (int i) const {
 		return (T)data[i];
 	}
+
+	T& get_data() {
+		return (T)*data;
+	}
 };
 
 template<typename T>
@@ -68,39 +72,62 @@ arr_resize(Arr<T> *arr, u32 size) {
 	arr->count = 0;
 }
 
+struct Vertex {
+	Vector2 pos;
+	Vector3 color;
+};
+
+const Vertex vertices[3] = {
+	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
+
+
 struct Vulkan_Info {
+	const u32 MAX_FRAMES_IN_FLIGHT = 2;
+	u32 current_frame;
+
+	s32 window_width;
+	s32 window_height;
+	bool8 framebuffer_resized = false;
+	bool8 minimized;
+
 	Vulkan_Validation_Layers validation_layers;
 	Vulkan_Swap_Chain_Support_Details swap_chain_support_details;
+
+	u32 instance_extensions_count;
+	const char **instance_extensions;
 
 	VkInstance instance;
 	VkPhysicalDevice physical_device;
 	VkDevice device;
+	VkSurfaceKHR surface;
 	VkRenderPass render_pass;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
-	VkCommandPool command_pool;
-	VkCommandBuffer command_buffer;
+	VkQueue graphics_queue;
+	VkQueue present_queue;
 
+	VkCommandPool command_pool;
+	Arr<VkCommandBuffer> command_buffers;
+
+	// swap_chain
 	VkSwapchainKHR swap_chain;
 	VkImage *swap_chain_images;
 	u32 swap_chain_images_count;
 	VkFormat swap_chain_image_format;
 	VkExtent2D swap_chain_extent;
-
 	Arr<VkImageView> swap_chain_image_views;
 	Arr<VkFramebuffer> swap_chain_framebuffers;
 
-	VkQueue graphics_queue;
-	VkQueue present_queue;
+	// sync
+	Arr<VkSemaphore> image_available_semaphore;
+	Arr<VkSemaphore> render_finished_semaphore;
+	Arr<VkFence> in_flight_fence;
 
-	VkSurfaceKHR surface;
-
-	u32 instance_extensions_count;
-	const char **instance_extensions;
-
-	// Sync
-	VkSemaphore image_available_semaphore;
-	VkSemaphore render_finished_semaphore;
-	VkFence in_flight_fence;
+	// Buffers
+	VkBuffer vertex_buffer;
+	VkDeviceMemory vertex_buffer_memory;
 };
