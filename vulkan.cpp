@@ -655,11 +655,12 @@ vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, 
 	scissor.extent = info->swap_chain_extent;
 	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
 
+	// Drawing Buffers
 	VkBuffer vertex_buffers[] = { info->vertex_buffer };
 	VkDeviceSize offsets[] = { 0 };
 	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-
-	vkCmdDraw(command_buffer, ARRAY_COUNT(vertices), 1, 0, 0);
+	vkCmdBindIndexBuffer(command_buffer, info->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdDrawIndexed(command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
 
 	vkCmdEndRenderPass(command_buffer);
 
@@ -706,35 +707,136 @@ vulkan_find_memory_type(VkPhysicalDevice physical_device, u32 type_filter, VkMem
 }
 
 internal void
-vulkan_create_vertex_buffer(Vulkan_Info *info) {
+vulkan_create_buffer(VkDevice device, VkPhysicalDevice physical_device, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags properties, VkBuffer &buffer, VkDeviceMemory &buffer_memory) {
 	VkBufferCreateInfo buffer_info = {};
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-	buffer_info.size = sizeof(vertices[0]) * ARRAY_COUNT(vertices);
-	buffer_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+	buffer_info.size = size;
+	buffer_info.usage = usage;
 	buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-	if (vkCreateBuffer(info->device, &buffer_info, nullptr, &info->vertex_buffer) != VK_SUCCESS) {
-		logprint("vulkan_create_vertex_buffer()", "failed to create vertex buffer\n");
+	if (vkCreateBuffer(device, &buffer_info, nullptr, &buffer) != VK_SUCCESS) {
+		logprint("vulkan_create_buffer()", "failed to create buffer\n");
+		return;
 	}
 
-	VkMemoryRequirements memory_requirements;
-	vkGetBufferMemoryRequirements(info->device, info->vertex_buffer, &memory_requirements);
-
-	VkMemoryAllocateInfo alloc_info = {};
-	alloc_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-	alloc_info.allocationSize = memory_requirements.size;
-	alloc_info.memoryTypeIndex = vulkan_find_memory_type(info->physical_device, memory_requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-	if (vkAllocateMemory(info->device, &alloc_info, nullptr, &info->vertex_buffer_memory) != VK_SUCCESS) {
-		logprint("vulkan_create_vertex_buffer()", "failed to allocate vertex buffer memory\n");
+	VkMemoryRequirements memory_requirements = {};
+	vkGetBufferMemoryRequirements(device, buffer, &memory_requirements);
+	
+	VkMemoryAllocateInfo allocate_info = {};
+	allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+	allocate_info.allocationSize = memory_requirements.size;
+	allocate_info.memoryTypeIndex = vulkan_find_memory_type(physical_device, memory_requirements.memoryTypeBits, properties);
+	
+	if (vkAllocateMemory(device, &allocate_info, nullptr, &buffer_memory) != VK_SUCCESS) {
+		logprint("vulkan_create_buffer()", "failed to allocate buffer memory\n");
+		return;
 	}
 
-	vkBindBufferMemory(info->device, info->vertex_buffer, info->vertex_buffer_memory, 0);
+	vkBindBufferMemory(device, buffer, buffer_memory, 0);
+}
+
+internal void
+vulkan_copy_buffer(Vulkan_Info *info, VkBuffer src_buffer, VkBuffer dest_buffer, VkDeviceSize size) {
+	VkCommandBufferAllocateInfo allocate_info = {};
+	allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocate_info.commandPool = info->command_pool;
+    allocate_info.commandBufferCount = 1;
+
+    VkCommandBuffer command_buffer;
+    vkAllocateCommandBuffers(info->device, &allocate_info, &command_buffer);
+
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+	vkBeginCommandBuffer(command_buffer, &begin_info);
+
+	VkBufferCopy copy_region = {};
+	copy_region.srcOffset = 0; // Optional
+	copy_region.dstOffset = 0; // Optional
+	copy_region.size = size;
+	vkCmdCopyBuffer(command_buffer, src_buffer, dest_buffer, 1, &copy_region);
+		
+	vkEndCommandBuffer(command_buffer);
+
+	VkSubmitInfo submit_info = {};
+	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	submit_info.commandBufferCount = 1;
+	submit_info.pCommandBuffers = &command_buffer;
+
+	vkQueueSubmit(info->graphics_queue, 1, &submit_info, VK_NULL_HANDLE);
+	vkQueueWaitIdle(info->graphics_queue);
+
+	vkFreeCommandBuffers(info->device, info->command_pool, 1, &command_buffer);
+}
+
+internal void
+vulkan_create_vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
+	VkDeviceSize buffer_size = in_data_size;
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	
+	vulkan_create_buffer(info->device, 
+						 info->physical_device,
+						 buffer_size, 
+						 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+						 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+						 staging_buffer,
+						 staging_buffer_memory);
 
 	void *data;
-	vkMapMemory(info->device, info->vertex_buffer_memory, 0, buffer_info.size, 0, &data);
-	memcpy(data, vertices, buffer_info.size);
-	vkUnmapMemory(info->device, info->vertex_buffer_memory);
+	vkMapMemory(info->device, staging_buffer_memory, 0, buffer_size, 0, &data);
+	memcpy(data, in_data, buffer_size);
+	vkUnmapMemory(info->device, staging_buffer_memory);
+
+	vulkan_create_buffer(info->device, 
+						 info->physical_device,
+						 buffer_size, 
+						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
+						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+						 *buffer,
+						 *memory);
+
+	vulkan_copy_buffer(info, staging_buffer, *buffer, buffer_size);
+	
+	vkDestroyBuffer(info->device, staging_buffer, nullptr);
+	vkFreeMemory(info->device, staging_buffer_memory, nullptr);
+}
+
+internal void
+vulkan_create_index_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
+	VkDeviceSize buffer_size = in_data_size;
+
+	VkBuffer staging_buffer;
+	VkDeviceMemory staging_buffer_memory;
+	
+	vulkan_create_buffer(info->device, 
+						 info->physical_device,
+						 buffer_size, 
+						 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
+						 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
+						 staging_buffer,
+						 staging_buffer_memory);
+
+	void *data;
+	vkMapMemory(info->device, staging_buffer_memory, 0, buffer_size, 0, &data);
+	memcpy(data, in_data, buffer_size);
+	vkUnmapMemory(info->device, staging_buffer_memory);
+
+	vulkan_create_buffer(info->device, 
+						 info->physical_device,
+						 buffer_size, 
+						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
+						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+						 *buffer,
+						 *memory);
+
+	vulkan_copy_buffer(info, staging_buffer, *buffer, buffer_size);
+	
+	vkDestroyBuffer(info->device, staging_buffer, nullptr);
+	vkFreeMemory(info->device, staging_buffer_memory, nullptr);
 }
 
 internal void
@@ -777,6 +879,10 @@ vulkan_cleanup(Vulkan_Info *info) {
 	// Vertex buffer
 	vkDestroyBuffer(info->device, info->vertex_buffer, nullptr);
 	vkFreeMemory(info->device, info->vertex_buffer_memory, nullptr);
+
+	// Index buffer
+	vkDestroyBuffer(info->device, info->index_buffer, nullptr);
+	vkFreeMemory(info->device, info->index_buffer_memory, nullptr);
 
 	vkDestroyPipeline(info->device, info->graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(info->device, info->pipeline_layout, nullptr);

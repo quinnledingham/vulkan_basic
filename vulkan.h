@@ -77,12 +77,16 @@ struct Vertex {
 	Vector3 color;
 };
 
-const Vertex vertices[3] = {
-	{{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+const Vertex vertices[4] = {
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 };
 
+const u16 indices[6] = {
+	0, 1, 2, 2, 3, 0
+};
 
 struct Vulkan_Info {
 	const u32 MAX_FRAMES_IN_FLIGHT = 2;
@@ -130,4 +134,6 @@ struct Vulkan_Info {
 	// Buffers
 	VkBuffer vertex_buffer;
 	VkDeviceMemory vertex_buffer_memory;
+	VkBuffer index_buffer;
+	VkDeviceMemory index_buffer_memory;
 };
