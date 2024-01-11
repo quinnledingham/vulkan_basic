@@ -77,6 +77,12 @@ struct Vertex {
 	Vector3 color;
 };
 
+struct Uniform_Buffer_Object {
+	Matrix_4x4 model;
+	Matrix_4x4 view;
+	Matrix_4x4 projection;
+};
+
 const Vertex vertices[4] = {
 	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
     {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
@@ -108,6 +114,7 @@ struct Vulkan_Info {
 	VkDevice device;
 	VkSurfaceKHR surface;
 	VkRenderPass render_pass;
+	VkDescriptorSetLayout descriptor_set_layout;
 	VkPipelineLayout pipeline_layout;
 	VkPipeline graphics_pipeline;
 
@@ -136,4 +143,11 @@ struct Vulkan_Info {
 	VkDeviceMemory vertex_buffer_memory;
 	VkBuffer index_buffer;
 	VkDeviceMemory index_buffer_memory;
+
+	Arr<VkBuffer> uniform_buffers;
+	Arr<VkDeviceMemory> uniform_buffers_memory;
+	Arr<void*> uniform_buffers_mapped;
+
+	VkDescriptorPool descriptor_pool;
+	Arr<VkDescriptorSet> descriptor_sets;
 };

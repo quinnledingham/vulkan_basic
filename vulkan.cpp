@@ -490,7 +490,7 @@ vulkan_create_graphics_pipeline(Vulkan_Info *info) {
 	rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 	rasterizer.lineWidth = 1.0f;
 	rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-	rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+	rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	rasterizer.depthBiasEnable = VK_FALSE;
 	rasterizer.depthBiasConstantFactor = 0.0f;      // Optional
 	rasterizer.depthBiasClamp = 0.0f;               // Optional
@@ -528,10 +528,10 @@ vulkan_create_graphics_pipeline(Vulkan_Info *info) {
 
 	VkPipelineLayoutCreateInfo pipeline_layout_info = {};
 	pipeline_layout_info.sType                  = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-	pipeline_layout_info.setLayoutCount         = 0;       // Optional
-	pipeline_layout_info.pSetLayouts            = nullptr; // Optional
-	pipeline_layout_info.pushConstantRangeCount = 0;       // Optional
-	pipeline_layout_info.pPushConstantRanges    = nullptr; // Optional
+	pipeline_layout_info.setLayoutCount         = 1;                            // Optional
+	pipeline_layout_info.pSetLayouts            = &info->descriptor_set_layout; // Optional
+	pipeline_layout_info.pushConstantRangeCount = 0;                            // Optional
+	pipeline_layout_info.pPushConstantRanges    = nullptr;                      // Optional
 	
 	if (vkCreatePipelineLayout(info->device, &pipeline_layout_info, nullptr, &info->pipeline_layout) != VK_SUCCESS) {
 		logprint("vulkan_create_graphics_pipeline()", "failed to create pipeline layout\n");
@@ -614,58 +614,6 @@ vulkan_create_command_buffers(Vulkan_Info *info) {
 
 	if (vkAllocateCommandBuffers(info->device, &alloc_info, &info->command_buffers.get_data()) != VK_SUCCESS) {
 		logprint("vulkan_create_command_buffer()", "failed to allocate command buffers\n");
-	}
-}
-
-internal void
-vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, u32 image_index) {
-	VkCommandBufferBeginInfo begin_info = {};
-	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin_info.flags = 0;				   // Optional
-	begin_info.pInheritanceInfo = nullptr; // Optional
-	if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
-	}	
-
-	VkRenderPassBeginInfo render_pass_info = {};
-	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = info->render_pass;
-	render_pass_info.framebuffer = info->swap_chain_framebuffers[image_index];
-	render_pass_info.renderArea.offset = {0, 0};
-	render_pass_info.renderArea.extent = info->swap_chain_extent;
-
-	VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
-	render_pass_info.clearValueCount = 1;
-	render_pass_info.pClearValues = &clear_color;
-
-	vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->graphics_pipeline);
-	
-	VkViewport viewport{};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = static_cast<float>(info->swap_chain_extent.width);
-	viewport.height = static_cast<float>(info->swap_chain_extent.height);
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-	VkRect2D scissor{};
-	scissor.offset = {0, 0};
-	scissor.extent = info->swap_chain_extent;
-	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-	// Drawing Buffers
-	VkBuffer vertex_buffers[] = { info->vertex_buffer };
-	VkDeviceSize offsets[] = { 0 };
-	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-	vkCmdBindIndexBuffer(command_buffer, info->index_buffer, 0, VK_INDEX_TYPE_UINT16);
-	vkCmdDrawIndexed(command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
-
-	vkCmdEndRenderPass(command_buffer);
-
-	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
 	}
 }
 
@@ -840,6 +788,110 @@ vulkan_create_index_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *
 }
 
 internal void
+vulkan_create_descriptor_set_layout(Vulkan_Info *info) {
+	VkDescriptorSetLayoutBinding ubo_layout_binding = {};
+    ubo_layout_binding.binding = 0;
+    ubo_layout_binding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    ubo_layout_binding.descriptorCount = 1;
+	ubo_layout_binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	ubo_layout_binding.pImmutableSamplers = nullptr; // Optional
+	
+	VkDescriptorSetLayoutCreateInfo layout_info = {};
+	layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	layout_info.bindingCount = 1;
+	layout_info.pBindings = &ubo_layout_binding;
+	
+	if (vkCreateDescriptorSetLayout(info->device, &layout_info, nullptr, &info->descriptor_set_layout) != VK_SUCCESS) {
+		logprint("vulkan_create_descriptor_set_layout()", "failed to create descriptor set layout\n");
+	}
+}
+
+internal void
+vulkan_crate_descriptor_pool(Vulkan_Info *info) {
+	VkDescriptorPoolSize pool_size = {};
+	pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+	pool_size.descriptorCount = info->MAX_FRAMES_IN_FLIGHT;
+
+	VkDescriptorPoolCreateInfo pool_info = {};
+	pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool_info.poolSizeCount = 1;
+	pool_info.pPoolSizes = &pool_size;
+	pool_info.maxSets = info->MAX_FRAMES_IN_FLIGHT;
+
+	if (vkCreateDescriptorPool(info->device, &pool_info, nullptr, &info->descriptor_pool) != VK_SUCCESS) {
+		logprint("vulkan_crate_descriptor_pool()", "failed to create descriptor pool\n");
+	}
+}
+
+internal void
+vulkan_create_descriptor_sets(Vulkan_Info *info) {
+	Arr<VkDescriptorSetLayout> layouts;
+	arr_resize(&layouts, info->MAX_FRAMES_IN_FLIGHT);
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		layouts[i] = info->descriptor_set_layout;
+	}
+
+	VkDescriptorSetAllocateInfo allocate_info = {};
+	allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate_info.descriptorPool = info->descriptor_pool;
+	allocate_info.descriptorSetCount = (u32)info->MAX_FRAMES_IN_FLIGHT;
+	allocate_info.pSetLayouts = (VkDescriptorSetLayout*)layouts.data;
+
+	arr_resize(&info->descriptor_sets, info->MAX_FRAMES_IN_FLIGHT);
+	if (vkAllocateDescriptorSets(info->device, &allocate_info, info->descriptor_sets.data) != VK_SUCCESS) {
+		logprint("vulkan_create_descriptor_sets()", "failed to allocate descriptor sets\n");
+	}
+
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		VkDescriptorBufferInfo buffer_info = {};
+	    buffer_info.buffer = info->uniform_buffers[i];
+	    buffer_info.offset = 0;
+	    buffer_info.range = sizeof(Uniform_Buffer_Object);
+
+		VkWriteDescriptorSet descriptor_write = {};
+		descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptor_write.dstSet = info->descriptor_sets[i];
+		descriptor_write.dstBinding = 0;
+		descriptor_write.dstArrayElement = 0;
+		descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptor_write.descriptorCount = 1;
+		descriptor_write.pBufferInfo = &buffer_info;
+		descriptor_write.pImageInfo = nullptr; // Optional
+		descriptor_write.pTexelBufferView = nullptr; // Optional
+
+		vkUpdateDescriptorSets(info->device, 1, &descriptor_write, 0, nullptr);
+	}
+}
+
+internal void
+vulkan_create_uniform_buffers(Vulkan_Info *info) {
+	VkDeviceSize buffer_size = sizeof(Uniform_Buffer_Object);
+	
+	arr_resize(&info->uniform_buffers,        info->MAX_FRAMES_IN_FLIGHT);
+	arr_resize(&info->uniform_buffers_memory, info->MAX_FRAMES_IN_FLIGHT);
+	arr_resize(&info->uniform_buffers_mapped, info->MAX_FRAMES_IN_FLIGHT);
+
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		vulkan_create_buffer(info->device, info->physical_device, buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, info->uniform_buffers[i], info->uniform_buffers_memory[i]);
+		vkMapMemory(info->device, info->uniform_buffers_memory[i], 0, buffer_size, 0, &info->uniform_buffers_mapped[i]);
+	}
+}
+
+float32 degrees = 0.0f;
+
+internal void
+vulkan_update_uniform_buffers(Vulkan_Info *info, u32 current_image) {
+	//degrees += 0.01f;
+
+	Uniform_Buffer_Object ubo = {};
+	ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
+	ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
+	ubo.projection = perspective_projection(45.0f, (float32)info->swap_chain_extent.width / (float32)info->swap_chain_extent.height, 0.1f, 10.0f);
+	ubo.projection.E[1][1] *= -1;
+	memcpy(info->uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
+}
+
+internal void
 vulkan_cleanup_swap_chain(Vulkan_Info *info) {
 	for (u32 i = 0; i < info->swap_chain_framebuffers.count; i++) {
 		vkDestroyFramebuffer(info->device, info->swap_chain_framebuffers[i], nullptr);
@@ -875,6 +927,15 @@ vulkan_recreate_swap_chain(Vulkan_Info *info) {
 internal void
 vulkan_cleanup(Vulkan_Info *info) {
 	vulkan_cleanup_swap_chain(info);
+	
+	// Uniform buffer
+	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
+		vkDestroyBuffer(info->device, info->uniform_buffers[i], nullptr);
+		vkFreeMemory(info->device, info->uniform_buffers_memory[i], nullptr);
+	}
+
+	vkDestroyDescriptorPool(info->device, info->descriptor_pool, nullptr);
+	vkDestroyDescriptorSetLayout(info->device, info->descriptor_set_layout, nullptr);
 
 	// Vertex buffer
 	vkDestroyBuffer(info->device, info->vertex_buffer, nullptr);
@@ -904,6 +965,59 @@ vulkan_cleanup(Vulkan_Info *info) {
 }
 
 internal void
+vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, u32 image_index) {
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = 0;				   // Optional
+	begin_info.pInheritanceInfo = nullptr; // Optional
+	if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
+	}	
+
+	VkRenderPassBeginInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	render_pass_info.renderPass = info->render_pass;
+	render_pass_info.framebuffer = info->swap_chain_framebuffers[image_index];
+	render_pass_info.renderArea.offset = {0, 0};
+	render_pass_info.renderArea.extent = info->swap_chain_extent;
+
+	VkClearValue clear_color = {{{0.0f, 0.0f, 0.0f, 1.0f}}};
+	render_pass_info.clearValueCount = 1;
+	render_pass_info.pClearValues = &clear_color;
+
+	vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->graphics_pipeline);
+	
+	VkViewport viewport{};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = static_cast<float>(info->swap_chain_extent.width);
+	viewport.height = static_cast<float>(info->swap_chain_extent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+
+	VkRect2D scissor{};
+	scissor.offset = {0, 0};
+	scissor.extent = info->swap_chain_extent;
+	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+
+	// Drawing Buffers
+	VkBuffer vertex_buffers[] = { info->vertex_buffer };
+	VkDeviceSize offsets[] = { 0 };
+	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+	vkCmdBindIndexBuffer(command_buffer, info->index_buffer, 0, VK_INDEX_TYPE_UINT16);
+	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->pipeline_layout, 0, 1, &info->descriptor_sets[info->current_frame], 0, nullptr);
+	vkCmdDrawIndexed(command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
+
+	vkCmdEndRenderPass(command_buffer);
+
+	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
+	}
+}
+
+internal void
 vulkan_draw_frame(Vulkan_Info *info) {
 	if (info->minimized)
 		return;
@@ -925,6 +1039,8 @@ vulkan_draw_frame(Vulkan_Info *info) {
 
 	vkResetCommandBuffer(info->command_buffers[info->current_frame], 0);
 	vulkan_record_command_buffer(info, info->command_buffers[info->current_frame], image_index);
+
+	vulkan_update_uniform_buffers(info, info->current_frame);
 
 	// Submitting the command buffer
 	VkSemaphore wait_semaphores[] = { info->image_available_semaphore[info->current_frame] };
