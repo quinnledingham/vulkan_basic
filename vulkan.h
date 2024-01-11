@@ -75,6 +75,7 @@ arr_resize(Arr<T> *arr, u32 size) {
 struct Vertex {
 	Vector2 pos;
 	Vector3 color;
+	Vector2 uv;
 };
 
 struct Uniform_Buffer_Object {
@@ -84,10 +85,10 @@ struct Uniform_Buffer_Object {
 };
 
 const Vertex vertices[4] = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
 
 const u16 indices[6] = {
@@ -150,4 +151,11 @@ struct Vulkan_Info {
 
 	VkDescriptorPool descriptor_pool;
 	Arr<VkDescriptorSet> descriptor_sets;
+
+	// Images
+	VkImage texture_image;
+	const VkFormat texture_image_format = VK_FORMAT_R8G8B8A8_SRGB;
+	VkDeviceMemory texture_image_memory;
+	VkImageView texture_image_view;
+	VkSampler texture_sampler;
 };

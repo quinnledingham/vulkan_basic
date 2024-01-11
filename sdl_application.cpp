@@ -86,15 +86,22 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	vulkan_create_frame_buffers(info);
 	vulkan_create_command_pool(info);
 
+	Bitmap yogi = load_bitmap("../yogi.png");
+	vulkan_create_texture_image(info, &yogi);
+	vulkan_create_texture_image_view(info);
+	vulkan_create_texture_sampler(info);
+
 	vulkan_create_vertex_buffer(info, &info->vertex_buffer, &info->vertex_buffer_memory, (void*)&vertices, sizeof(vertices[0]) * ARRAY_COUNT(vertices));
 	vulkan_create_index_buffer(info, &info->index_buffer, &info->index_buffer_memory, (void*)&indices, sizeof(indices[0]) * ARRAY_COUNT(indices));
 	vulkan_create_uniform_buffers(info);
 	
-	vulkan_crate_descriptor_pool(info);
+	vulkan_create_descriptor_pool(info);
 	vulkan_create_descriptor_sets(info);
 
 	vulkan_create_command_buffers(info);
 	vulkan_create_sync_objects(info);
+
+
 }
 
 internal bool8
