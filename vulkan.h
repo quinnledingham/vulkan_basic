@@ -29,51 +29,8 @@ struct Vulkan_Swap_Chain_Support_Details {
 	u32 present_modes_count;
 };
 
-const char *device_extensions[1] = {
-	VK_KHR_SWAPCHAIN_EXTENSION_NAME
-};
-
-template<typename T>
-struct Arr {
-	T *data;
-	u32 size;  // number of elements of memory allocated at data
-	u32 count; // number of elements added to memory at data
-
-	u32 data_size;
-	u32 type_size;
-
-	T& operator [] (int i) { 
-		if (i >= (int)size) {
-			print("WARNING: tried to access memory outside of Arr range. Returned last element instead\n");
-			return data[size - 1];
-		}
-
-		return data[i]; 
-	}
-
-	T operator [] (int i) const {
-		return (T)data[i];
-	}
-
-	T& get_data() {
-		return (T)*data;
-	}
-};
-
-template<typename T>
-internal void
-arr_resize(Arr<T> *arr, u32 size) {
-	if (arr->data == 0)
-		platform_free(arr->data);
-	arr->type_size = sizeof(T);
-	arr->data_size = arr->type_size * size;
-	arr->data = (T*)platform_malloc(arr->data_size);
-	arr->size = size;
-	arr->count = 0;
-}
-
 struct Vertex {
-	Vector2 pos;
+	Vector3 pos;
 	Vector3 color;
 	Vector2 uv;
 };
@@ -84,18 +41,28 @@ struct Uniform_Buffer_Object {
 	Matrix_4x4 projection;
 };
 
-const Vertex vertices[4] = {
-	{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+const Vertex vertices[8] = {
+	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
 };
 
-const u16 indices[6] = {
-	0, 1, 2, 2, 3, 0
+const u16 indices[12] = {
+	0, 1, 2, 2, 3, 0,
+    4, 5, 6, 6, 7, 4
 };
 
 struct Vulkan_Info {
+	const char *device_extensions[1] = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME
+	};
+
 	const u32 MAX_FRAMES_IN_FLIGHT = 2;
 	u32 current_frame;
 
@@ -106,6 +73,8 @@ struct Vulkan_Info {
 
 	Vulkan_Validation_Layers validation_layers;
 	Vulkan_Swap_Chain_Support_Details swap_chain_support_details;
+
+	VkDebugUtilsMessengerEXT debug_messenger;
 
 	u32 instance_extensions_count;
 	const char **instance_extensions;
@@ -127,8 +96,7 @@ struct Vulkan_Info {
 
 	// swap_chain
 	VkSwapchainKHR swap_chain;
-	VkImage *swap_chain_images;
-	u32 swap_chain_images_count;
+	Arr<VkImage> swap_chain_images;
 	VkFormat swap_chain_image_format;
 	VkExtent2D swap_chain_extent;
 	Arr<VkImageView> swap_chain_image_views;
@@ -145,6 +113,9 @@ struct Vulkan_Info {
 	VkBuffer index_buffer;
 	VkDeviceMemory index_buffer_memory;
 
+	VkBuffer combined_buffer;
+	VkDeviceMemory combined_buffer_memory;
+
 	Arr<VkBuffer> uniform_buffers;
 	Arr<VkDeviceMemory> uniform_buffers_memory;
 	Arr<void*> uniform_buffers_mapped;
@@ -158,4 +129,8 @@ struct Vulkan_Info {
 	VkDeviceMemory texture_image_memory;
 	VkImageView texture_image_view;
 	VkSampler texture_sampler;
+
+	VkImage depth_image;
+	VkDeviceMemory depth_image_memory;
+	VkImageView depth_image_view;
 };

@@ -47,6 +47,7 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #include "types_math.h"
 #include "char_array.h"
 #include "assets.h"
+#include "data_structs.h"
 #include "vulkan.h"
 #include "application.h"
 
@@ -71,6 +72,7 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	}
 
 	vulkan_create_instance(info);
+	vulkan_setup_debug_messenger(info);
 
 	if (SDL_Vulkan_CreateSurface(sdl_window, info->instance, &info->surface) == SDL_FALSE) {
 		logprint("main", "vulkan surface failed being created\n");
@@ -83,16 +85,25 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	vulkan_create_render_pass(info);
 	vulkan_create_descriptor_set_layout(info);
 	vulkan_create_graphics_pipeline(info);
-	vulkan_create_frame_buffers(info);
 	vulkan_create_command_pool(info);
+	vulkan_create_depth_resources(info);
+	vulkan_create_frame_buffers(info);
 
 	Bitmap yogi = load_bitmap("../yogi.png");
 	vulkan_create_texture_image(info, &yogi);
+	free_bitmap(yogi);
 	vulkan_create_texture_image_view(info);
 	vulkan_create_texture_sampler(info);
 
 	vulkan_create_vertex_buffer(info, &info->vertex_buffer, &info->vertex_buffer_memory, (void*)&vertices, sizeof(vertices[0]) * ARRAY_COUNT(vertices));
 	vulkan_create_index_buffer(info, &info->index_buffer, &info->index_buffer_memory, (void*)&indices, sizeof(indices[0]) * ARRAY_COUNT(indices));
+	
+	u32 combined_size = sizeof(vertices) + sizeof(indices);
+	void *memory = platform_malloc(combined_size);
+	memcpy(memory, (void*)&vertices, sizeof(vertices));
+	memcpy((char*)memory + sizeof(vertices), (void*)&indices, sizeof(indices));
+	vulkan_create_Vertex_buffer(info, &info->combined_buffer, &info->combined_buffer_memory, memory, combined_size);
+	
 	vulkan_create_uniform_buffers(info);
 	
 	vulkan_create_descriptor_pool(info);
@@ -100,8 +111,6 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 
 	vulkan_create_command_buffers(info);
 	vulkan_create_sync_objects(info);
-
-
 }
 
 internal bool8
@@ -174,7 +183,7 @@ int main(int argc, char *argv[]) {
 	sdl_window_flags = sdl_window_flags | SDL_WINDOW_VULKAN;
 #endif // OPENGL / VULKAN
 
-    SDL_Window *sdl_window = SDL_CreateWindow("play_nine", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 900, 800, sdl_window_flags);
+    SDL_Window *sdl_window = SDL_CreateWindow("vulkan_basic", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 900, 800, sdl_window_flags);
     if (sdl_window == NULL) {
     	print(SDL_GetError());
     	return 1;
