@@ -63,7 +63,7 @@ struct Vulkan_Info {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME
 	};
 
-	const u32 MAX_FRAMES_IN_FLIGHT = 2;
+	static const u32 MAX_FRAMES_IN_FLIGHT = 2;
 	u32 current_frame;
 
 	s32 window_width;
@@ -108,17 +108,24 @@ struct Vulkan_Info {
 	Arr<VkFence> in_flight_fence;
 
 	// Buffers
+/*
 	VkBuffer vertex_buffer;
 	VkDeviceMemory vertex_buffer_memory;
 	VkBuffer index_buffer;
 	VkDeviceMemory index_buffer_memory;
-
+*/
+	u32 vertices_offset;
+	u32 indices_offset;
+	
 	VkBuffer combined_buffer;
 	VkDeviceMemory combined_buffer_memory;
 
-	Arr<VkBuffer> uniform_buffers;
-	Arr<VkDeviceMemory> uniform_buffers_memory;
-	Arr<void*> uniform_buffers_mapped;
+	//Arr<VkBuffer> uniform_buffers;
+	//Arr<VkDeviceMemory> uniform_buffers_memory;
+	//Arr<void*> uniform_buffers_mapped;
+	void *uniform_buffers_mapped;
+	VkDeviceSize uniforms_offset[MAX_FRAMES_IN_FLIGHT];
+
 
 	VkDescriptorPool descriptor_pool;
 	Arr<VkDescriptorSet> descriptor_sets;

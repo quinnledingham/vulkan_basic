@@ -16,7 +16,7 @@ load_file(const char *filepath) {
         fread(result.memory, result.size, 1, in);
         fclose(in);
     } else { 
-    	logprint("load_file", "Cannot open file %s", filepath);
+    	logprint("load_file", "Cannot open file %s\n", filepath);
     }
     
     result.filepath = filepath;

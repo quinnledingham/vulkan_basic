@@ -524,10 +524,36 @@ struct Vulkan_Graphics_Pipeline {
 	VkVertexInputAttributeDescription attribute_descriptions[3];
 };
 
+internal File
+vulkan_load_shader(shaderc_compiler_t compiler, const char *filepath, shaderc_shader_kind shader_kind) {
+	File file = load_file(filepath);
+	const shaderc_compilation_result_t result = shaderc_compile_into_spv(compiler, (char*)file.memory, file.size, shader_kind, get_filename(filepath), "main", nullptr);
+
+	u32 num_of_warnings = (u32)shaderc_result_get_num_warnings(result);
+	u32 num_of_errors = (u32)shaderc_result_get_num_errors(result);
+
+	if (num_of_warnings != 0 || num_of_errors != 0) {
+		const char *error_message = shaderc_result_get_error_message(result);
+		logprint("vulkan_load_shader()", "%s", error_message);
+	}
+
+	u32 length = (u32)shaderc_result_get_length(result);
+	const char *bytes = shaderc_result_get_bytes(result);
+
+	File result_file = {};
+	result_file.memory = (void*)bytes;
+	result_file.size = length;
+	return result_file;
+}
+
 internal void
 vulkan_create_graphics_pipeline(Vulkan_Info *info) {
-	File vert = load_file("../vert.spv");
-	File frag = load_file("../frag.spv");
+	shaderc_compiler_t compiler = shaderc_compiler_initialize();
+	File vert = vulkan_load_shader(compiler, "../assets/shaders/basic.vert", shaderc_glsl_vertex_shader);
+	File frag = vulkan_load_shader(compiler, "../assets/shaders/basic.frag", shaderc_glsl_fragment_shader);
+
+	//File vert = load_file("../vert.spv");
+	//File frag = load_file("../frag.spv");
 
 	VkShaderModule vert_shader_module = vulkan_create_shader_module(info->device, vert);
 	VkShaderModule frag_shader_module = vulkan_create_shader_module(info->device, frag);
@@ -852,74 +878,6 @@ vulkan_copy_buffer(Vulkan_Info *info, VkBuffer src_buffer, VkBuffer dest_buffer,
 }
 
 internal void
-vulkan_create_vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
-	VkDeviceSize buffer_size = in_data_size;
-
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
-	
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-						 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-						 staging_buffer,
-						 staging_buffer_memory);
-
-	void *data;
-	vkMapMemory(info->device, staging_buffer_memory, 0, buffer_size, 0, &data);
-	memcpy(data, in_data, buffer_size);
-	vkUnmapMemory(info->device, staging_buffer_memory);
-
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
-						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-						 *buffer,
-						 *memory);
-
-	vulkan_copy_buffer(info, staging_buffer, *buffer, buffer_size);
-	
-	vkDestroyBuffer(info->device, staging_buffer, nullptr);
-	vkFreeMemory(info->device, staging_buffer_memory, nullptr);
-}
-
-internal void
-vulkan_create_index_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
-	VkDeviceSize buffer_size = in_data_size;
-
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
-	
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
-						 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT,
-						 staging_buffer,
-						 staging_buffer_memory);
-
-	void *data;
-	vkMapMemory(info->device, staging_buffer_memory, 0, buffer_size, 0, &data);
-	memcpy(data, in_data, buffer_size);
-	vkUnmapMemory(info->device, staging_buffer_memory);
-
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
-						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-						 *buffer,
-						 *memory);
-
-	vulkan_copy_buffer(info, staging_buffer, *buffer, buffer_size);
-	
-	vkDestroyBuffer(info->device, staging_buffer, nullptr);
-	vkFreeMemory(info->device, staging_buffer_memory, nullptr);
-}
-
-internal void
 vulkan_create_Vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
 	VkDeviceSize buffer_size = in_data_size;
 	VkBuffer staging_buffer;
@@ -941,8 +899,8 @@ vulkan_create_Vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory 
 	vulkan_create_buffer(info->device, 
 						 info->physical_device,
 						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT, 
-						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
 						 *buffer,
 						 *memory);
 
@@ -999,6 +957,14 @@ vulkan_create_descriptor_pool(Vulkan_Info *info) {
 	}
 }
 
+internal VkDeviceSize
+vulkan_get_alignment(VkDeviceSize in, u32 alignment) {
+	while(in % alignment != 0) {
+		in++;
+	}
+	return in;
+}
+
 internal void
 vulkan_create_descriptor_sets(Vulkan_Info *info) {
 	Arr<VkDescriptorSetLayout> layouts;
@@ -1020,8 +986,8 @@ vulkan_create_descriptor_sets(Vulkan_Info *info) {
 
 	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
 		VkDescriptorBufferInfo buffer_info = {};
-	    buffer_info.buffer = info->uniform_buffers[i];
-	    buffer_info.offset = 0;
+	    buffer_info.buffer = info->combined_buffer;
+	    buffer_info.offset = info->uniforms_offset[i];
 	    buffer_info.range = sizeof(Uniform_Buffer_Object);
 
 		VkDescriptorImageInfo image_info = {};
@@ -1051,17 +1017,10 @@ vulkan_create_descriptor_sets(Vulkan_Info *info) {
 }
 
 internal void
-vulkan_create_uniform_buffers(Vulkan_Info *info) {
-	VkDeviceSize buffer_size = sizeof(Uniform_Buffer_Object);
-	
-	info->uniform_buffers.resize(info->MAX_FRAMES_IN_FLIGHT);
-	info->uniform_buffers_memory.resize(info->MAX_FRAMES_IN_FLIGHT);
-	info->uniform_buffers_mapped.resize(info->MAX_FRAMES_IN_FLIGHT);
-
-	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
-		vulkan_create_buffer(info->device, info->physical_device, buffer_size, VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, info->uniform_buffers[i], info->uniform_buffers_memory[i]);
-		vkMapMemory(info->device, info->uniform_buffers_memory[i], 0, buffer_size, 0, &info->uniform_buffers_mapped[i]);
-	}
+vulkan_setup_uniform_buffers(Vulkan_Info *info) {
+	VkDeviceSize buffer_size = VK_WHOLE_SIZE;
+	VkDeviceSize offset = info->uniforms_offset[0];
+	vkMapMemory(info->device, info->combined_buffer_memory, offset, buffer_size, 0, &info->uniform_buffers_mapped);
 }
 
 float32 degrees = 0.0f;
@@ -1069,13 +1028,14 @@ float32 degrees = 0.0f;
 internal void
 vulkan_update_uniform_buffers(Vulkan_Info *info, u32 current_image) {
 	//degrees += 0.01f;
+	u32 offset = sizeof(Uniform_Buffer_Object) * current_image;
 
 	Uniform_Buffer_Object ubo = {};
 	ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
 	ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
 	ubo.projection = perspective_projection(45.0f, (float32)info->swap_chain_extent.width / (float32)info->swap_chain_extent.height, 0.1f, 10.0f);
 	ubo.projection.E[1][1] *= -1;
-	memcpy(info->uniform_buffers_mapped[current_image], &ubo, sizeof(ubo));
+	memcpy((char*)info->uniform_buffers_mapped + offset, &ubo, sizeof(ubo));
 }
 
 internal void
@@ -1237,21 +1197,22 @@ vulkan_cleanup(Vulkan_Info *info) {
 
 	// Uniform buffer
 	for (u32 i = 0; i < info->MAX_FRAMES_IN_FLIGHT; i++) {
-		vkDestroyBuffer(info->device, info->uniform_buffers[i], nullptr);
-		vkFreeMemory(info->device, info->uniform_buffers_memory[i], nullptr);
+		//vkDestroyBuffer(info->device, info->uniform_buffers[i], nullptr);
+		//vkFreeMemory(info->device, info->uniform_buffers_memory[i], nullptr);
 	}
 
 	vkDestroyDescriptorPool(info->device, info->descriptor_pool, nullptr);
 	vkDestroyDescriptorSetLayout(info->device, info->descriptor_set_layout, nullptr);
 
 	// Vertex buffer
+	/*
 	vkDestroyBuffer(info->device, info->vertex_buffer, nullptr);
 	vkFreeMemory(info->device, info->vertex_buffer_memory, nullptr);
 
 	// Index buffer
 	vkDestroyBuffer(info->device, info->index_buffer, nullptr);
 	vkFreeMemory(info->device, info->index_buffer_memory, nullptr);
-
+	*/
 	vkDestroyPipeline(info->device, info->graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(info->device, info->pipeline_layout, nullptr);
 	

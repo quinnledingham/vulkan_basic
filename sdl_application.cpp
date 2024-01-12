@@ -24,6 +24,13 @@
 	#pragma message("VULKAN")
 	#include <SDL_vulkan.h>
 	#include <vulkan/vulkan.h>
+
+	#include <shaderc/env.h>
+	#include <shaderc/shaderc.h>
+	#include <shaderc/shaderc.hpp>
+	#include <shaderc/status.h>
+	#include <shaderc/visibility.h>
+
 	#define VK_USE_PLATFORM_WIN32_KHR
 #endif // OPENGL / VULKAN
 
@@ -78,6 +85,9 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 		logprint("main", "vulkan surface failed being created\n");
 	}
 
+	//shaderc_compiler_t compiler = shaderc_compiler_initialize();
+	//shaderc_compilation_result *result = shaderc_compile_into_spv(compiler, "#version 450\nvoid main() {}", 27, shaderc_glsl_vertex_shader, "main.vert", "main", nullptr);
+	
 	vulkan_pick_physical_device(info);
 	vulkan_create_logical_device(info);
 	vulkan_create_swap_chain(info);
@@ -89,22 +99,23 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	vulkan_create_depth_resources(info);
 	vulkan_create_frame_buffers(info);
 
-	Bitmap yogi = load_bitmap("../yogi.png");
+	Bitmap yogi = load_bitmap("../assets/bitmaps/yogi.png");
 	vulkan_create_texture_image(info, &yogi);
 	free_bitmap(yogi);
 	vulkan_create_texture_image_view(info);
 	vulkan_create_texture_sampler(info);
-
-	vulkan_create_vertex_buffer(info, &info->vertex_buffer, &info->vertex_buffer_memory, (void*)&vertices, sizeof(vertices[0]) * ARRAY_COUNT(vertices));
-	vulkan_create_index_buffer(info, &info->index_buffer, &info->index_buffer_memory, (void*)&indices, sizeof(indices[0]) * ARRAY_COUNT(indices));
 	
-	u32 combined_size = sizeof(vertices) + sizeof(indices);
+	u32 combined_size = sizeof(vertices) + sizeof(indices) + (sizeof(Uniform_Buffer_Object) * info->MAX_FRAMES_IN_FLIGHT);
 	void *memory = platform_malloc(combined_size);
 	memcpy(memory, (void*)&vertices, sizeof(vertices));
 	memcpy((char*)memory + sizeof(vertices), (void*)&indices, sizeof(indices));
+
+	info->uniforms_offset[0] = vulkan_get_alignment(sizeof(vertices) + sizeof(indices), 64);
+	info->uniforms_offset[1] = vulkan_get_alignment(info->uniforms_offset[0], 64);
+
 	vulkan_create_Vertex_buffer(info, &info->combined_buffer, &info->combined_buffer_memory, memory, combined_size);
 	
-	vulkan_create_uniform_buffers(info);
+	vulkan_setup_uniform_buffers(info);
 	
 	vulkan_create_descriptor_pool(info);
 	vulkan_create_descriptor_sets(info);
