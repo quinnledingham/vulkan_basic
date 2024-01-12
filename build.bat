@@ -19,6 +19,7 @@ set LF_OPENGL= opengl32.lib
 set LF_VULKAN= ..\VulkanSDK\1.3.268.0\Lib\vulkan-1.lib ..\VulkanSDK\1.3.268.0\Lib\shaderc_combined.lib
 
 cl %CF_DEFAULT% %CF_SDL% %CF_VULKAN% -DWINDOWS -DSDL -DVULKAN -DDEBUG ../sdl_application.cpp /link %LF_DEFAULT% %LF_SDL% %LF_VULKAN% /out:vulkan.exe
+cl %CF_DEFAULT% %CF_SDL% %CF_OPENGL% -DWINDOWS -DSDL -DOPENGL -DDEBUG ../sdl_application.cpp /link %LF_DEFAULT% %LF_SDL% %LF_OPENGL% /out:opengl.exe
 
 
 IF NOT EXIST SDL2.dll copy ..\sdl-vc\lib\x64\SDL2.dll

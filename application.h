@@ -7,6 +7,9 @@ struct App_Time {
 	float32 frame_time_s;
 
 	float32 frames_per_s;
+
+	u32 avg_fps_sum_count;
+	float32 avg_fps;
 };
 
 struct App {

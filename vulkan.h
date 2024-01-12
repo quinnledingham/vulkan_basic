@@ -29,33 +29,11 @@ struct Vulkan_Swap_Chain_Support_Details {
 	u32 present_modes_count;
 };
 
-struct Vertex {
-	Vector3 pos;
-	Vector3 color;
-	Vector2 uv;
-};
-
-struct Uniform_Buffer_Object {
-	Matrix_4x4 model;
-	Matrix_4x4 view;
-	Matrix_4x4 projection;
-};
-
-const Vertex vertices[8] = {
-	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-const u16 indices[12] = {
-	0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
+struct Vulkan_Graphics_Pipeline {
+	File vert; // compiled
+	File frag;
+	VkVertexInputBindingDescription binding_description;
+	VkVertexInputAttributeDescription attribute_descriptions[3];
 };
 
 struct Vulkan_Info {
@@ -93,10 +71,12 @@ struct Vulkan_Info {
 
 	VkCommandPool command_pool;
 	Arr<VkCommandBuffer> command_buffers;
+	VkCommandBuffer command_buffer;             // set at the start of the frame for the current frame
 
 	// swap_chain
 	VkSwapchainKHR swap_chain;
 	Arr<VkImage> swap_chain_images;
+	u32 image_index;                            // set at the start of the frame for the current frame
 	VkFormat swap_chain_image_format;
 	VkExtent2D swap_chain_extent;
 	Arr<VkImageView> swap_chain_image_views;
@@ -108,25 +88,17 @@ struct Vulkan_Info {
 	Arr<VkFence> in_flight_fence;
 
 	// Buffers
-/*
-	VkBuffer vertex_buffer;
-	VkDeviceMemory vertex_buffer_memory;
-	VkBuffer index_buffer;
-	VkDeviceMemory index_buffer_memory;
-*/
 	u32 vertices_offset;
 	u32 indices_offset;
 	
 	VkBuffer combined_buffer;
 	VkDeviceMemory combined_buffer_memory;
 
-	//Arr<VkBuffer> uniform_buffers;
-	//Arr<VkDeviceMemory> uniform_buffers_memory;
-	//Arr<void*> uniform_buffers_mapped;
 	void *uniform_buffers_mapped;
 	VkDeviceSize uniforms_offset[MAX_FRAMES_IN_FLIGHT];
+	u32 uniform_size;
 
-
+	// Descriptors used for uniforms in shaders
 	VkDescriptorPool descriptor_pool;
 	Arr<VkDescriptorSet> descriptor_sets;
 
@@ -141,3 +113,5 @@ struct Vulkan_Info {
 	VkDeviceMemory depth_image_memory;
 	VkImageView depth_image_view;
 };
+
+global Vulkan_Info vulkan_info;

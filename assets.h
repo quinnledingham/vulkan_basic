@@ -39,4 +39,60 @@ struct Bitmap {
 	void *gpu_handle; // information about bitmap on gpu
 };
 
+struct Vertex {
+	Vector3 pos;
+	Vector3 color;
+	Vector2 uv;
+};
+
+struct Uniform_Buffer_Object {
+	void *handle; // OpenGL = u32; Vulkan = void*
+	u32 size;
+	u32 offset;
+
+	u32 opengl() {
+		return *(u32*)handle;
+	}
+};
+
+struct Matrices {
+	Matrix_4x4 model;
+	Matrix_4x4 view;
+	Matrix_4x4 projection;
+};
+
+struct Mesh {
+	Vertex *vertices;
+	u32 vertices_count;
+
+	u32 *indices;
+	u32 indices_count;
+
+	void *gpu_info;
+};
+
+enum shader_types
+{
+    VERTEX_SHADER,                  // 0 (shader files array index)
+    TESSELLATION_CONTROL_SHADER,    // 1
+    TESSELLATION_EVALUATION_SHADER, // 2
+    GEOMETRY_SHADER,                // 3
+    FRAGMENT_SHADER,                // 4
+
+    SHADER_TYPE_AMOUNT              // 5
+};
+
+struct Shader
+{
+    File files[SHADER_TYPE_AMOUNT];
+
+    bool8 compiled;
+    //b32 uniform_buffer_objects_generated;
+    u32 handle;
+};
+
+u32 use_shader(Shader *shader); // returns the handle of a shader
+void load_shader(Shader *shader);
+void compile_shader(Shader *shader);
+
 #endif // ASSETS_H

@@ -307,15 +307,17 @@ vulkan_choose_swap_surface_format(VkSurfaceFormatKHR *formats, u32 count) {
 	return formats[0];
 }
 
+// VSYNC OFF : VK_PRESENT_MODE_IMMEDIATE_KHR 
+// VSYNC ON  : VK_PRESENT_MODE_MAILBOX_KHR
 internal VkPresentModeKHR
 vulkan_choose_swap_present_mode(VkPresentModeKHR *modes, u32 count) {
 	for (u32 i = 0; i < count; i++) {
-		if (modes[i] == VK_PRESENT_MODE_MAILBOX_KHR) {
+		if (modes[i] == VK_PRESENT_MODE_IMMEDIATE_KHR) {
 			return modes[i];
 		}
 	}
 
-	return VK_PRESENT_MODE_FIFO_KHR;
+	return VK_PRESENT_MODE_FIFO_KHR; // this mode is required to be supported
 }
 
 internal VkExtent2D
@@ -416,21 +418,6 @@ vulkan_create_image_views(Vulkan_Info *info) {
 	}
 }
 
-internal VkShaderModule
-vulkan_create_shader_module(VkDevice device, File code) {
-	VkShaderModuleCreateInfo create_info = {};
-	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-	create_info.codeSize = code.size;
-	create_info.pCode = (u32*)code.memory;
-
-	VkShaderModule shader_module;
-	if (vkCreateShaderModule(device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
-		logprint("vulkan_create_shader_module()", "failed to create shader module\n");
-	}
-
-	return shader_module;
-}
-
 internal VkFormat
 vulkan_find_supported_format(VkPhysicalDevice physical_device, VkFormat *candidates, u32 candidates_count, VkImageTiling tiling, VkFormatFeatureFlags features) {
 	for (u32 i = 0; i < candidates_count; i++) {
@@ -517,12 +504,20 @@ vulkan_create_render_pass(Vulkan_Info *info) {
 	}
 }
 
-struct Vulkan_Graphics_Pipeline {
-	File vert;
-	File frag;
-	VkVertexInputBindingDescription binding_description;
-	VkVertexInputAttributeDescription attribute_descriptions[3];
-};
+internal VkShaderModule
+vulkan_create_shader_module(VkDevice device, File code) {
+	VkShaderModuleCreateInfo create_info = {};
+	create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+	create_info.codeSize = code.size;
+	create_info.pCode = (u32*)code.memory;
+
+	VkShaderModule shader_module;
+	if (vkCreateShaderModule(device, &create_info, nullptr, &shader_module) != VK_SUCCESS) {
+		logprint("vulkan_create_shader_module()", "failed to create shader module\n");
+	}
+
+	return shader_module;
+}
 
 internal File
 vulkan_load_shader(shaderc_compiler_t compiler, const char *filepath, shaderc_shader_kind shader_kind) {
@@ -547,7 +542,7 @@ vulkan_load_shader(shaderc_compiler_t compiler, const char *filepath, shaderc_sh
 }
 
 internal void
-vulkan_create_graphics_pipeline(Vulkan_Info *info) {
+vulkan_create_graphics_pipeline(Vulkan_Info *info, Vulkan_Graphics_Pipeline *pipeline_info) {
 	shaderc_compiler_t compiler = shaderc_compiler_initialize();
 	File vert = vulkan_load_shader(compiler, "../assets/shaders/basic.vert", shaderc_glsl_vertex_shader);
 	File frag = vulkan_load_shader(compiler, "../assets/shaders/basic.frag", shaderc_glsl_fragment_shader);
@@ -579,27 +574,12 @@ vulkan_create_graphics_pipeline(Vulkan_Info *info) {
 	dynamic_state.pDynamicStates = dynamic_states;
 
 	// Vertex Input description
-	VkVertexInputBindingDescription binding_description = {};
-	binding_description.binding = 0;
-	binding_description.stride = sizeof(Vertex);
-	binding_description.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-	
-	VkVertexInputAttributeDescription attribute_descriptions[3] = {};
-
-	attribute_descriptions[0].binding = 0;
-	attribute_descriptions[0].location = 0;
-	attribute_descriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-	attribute_descriptions[0].offset = offsetof(Vertex, pos);
-
-	attribute_descriptions[1].binding = 0;
-	attribute_descriptions[1].location = 1;
-	attribute_descriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-	attribute_descriptions[1].offset = offsetof(Vertex, color);	
-
-	attribute_descriptions[2].binding = 0;
-	attribute_descriptions[2].location = 2;
-	attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-	attribute_descriptions[2].offset = offsetof(Vertex, uv);	
+	VkVertexInputBindingDescription binding_description = pipeline_info->binding_description;
+	VkVertexInputAttributeDescription attribute_descriptions[3] = { 
+		pipeline_info->attribute_descriptions[0],
+		pipeline_info->attribute_descriptions[1],
+		pipeline_info->attribute_descriptions[2]
+	};
 
 	VkPipelineVertexInputStateCreateInfo vertex_input_info = {};
 	vertex_input_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -684,25 +664,25 @@ vulkan_create_graphics_pipeline(Vulkan_Info *info) {
 		logprint("vulkan_create_graphics_pipeline()", "failed to create pipeline layout\n");
 	}
 	
-	VkGraphicsPipelineCreateInfo pipeline_info = {};
-	pipeline_info.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-	pipeline_info.stageCount          = 2;
-	pipeline_info.pStages             = shader_stages;
-	pipeline_info.pVertexInputState   = &vertex_input_info;
-	pipeline_info.pInputAssemblyState = &input_assembly;
-	pipeline_info.pViewportState      = &viewport_state;
-	pipeline_info.pRasterizationState = &rasterizer;
-	pipeline_info.pMultisampleState   = &multisampling;
-	pipeline_info.pDepthStencilState  = &depth_stencil;         // Optional
-	pipeline_info.pColorBlendState    = &color_blending;
-	pipeline_info.pDynamicState       = &dynamic_state;
-	pipeline_info.layout              = info->pipeline_layout;
-	pipeline_info.renderPass          = info->render_pass;
-	pipeline_info.subpass             = 0;
-	pipeline_info.basePipelineHandle  = VK_NULL_HANDLE;        // Optional
-	pipeline_info.basePipelineIndex   = -1;                    // Optional
+	VkGraphicsPipelineCreateInfo pipeline_create_info = {};
+	pipeline_create_info.sType               = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+	pipeline_create_info.stageCount          = 2;
+	pipeline_create_info.pStages             = shader_stages;
+	pipeline_create_info.pVertexInputState   = &vertex_input_info;
+	pipeline_create_info.pInputAssemblyState = &input_assembly;
+	pipeline_create_info.pViewportState      = &viewport_state;
+	pipeline_create_info.pRasterizationState = &rasterizer;
+	pipeline_create_info.pMultisampleState   = &multisampling;
+	pipeline_create_info.pDepthStencilState  = &depth_stencil;         // Optional
+	pipeline_create_info.pColorBlendState    = &color_blending;
+	pipeline_create_info.pDynamicState       = &dynamic_state;
+	pipeline_create_info.layout              = info->pipeline_layout;
+	pipeline_create_info.renderPass          = info->render_pass;
+	pipeline_create_info.subpass             = 0;
+	pipeline_create_info.basePipelineHandle  = VK_NULL_HANDLE;        // Optional
+	pipeline_create_info.basePipelineIndex   = -1;                    // Optional
 
-	if (vkCreateGraphicsPipelines(info->device, VK_NULL_HANDLE, 1, &pipeline_info, nullptr, &info->graphics_pipeline) != VK_SUCCESS) {
+	if (vkCreateGraphicsPipelines(info->device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &info->graphics_pipeline) != VK_SUCCESS) {
 		logprint("vulkan_create_graphics_pipeline()", "failed to create graphics pipelines\n");
 	}
 
@@ -878,7 +858,7 @@ vulkan_copy_buffer(Vulkan_Info *info, VkBuffer src_buffer, VkBuffer dest_buffer,
 }
 
 internal void
-vulkan_create_Vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
+vulkan_update_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory *memory, void *in_data, u32 in_data_size) {
 	VkDeviceSize buffer_size = in_data_size;
 	VkBuffer staging_buffer;
 	VkDeviceMemory staging_buffer_memory;
@@ -895,14 +875,6 @@ vulkan_create_Vertex_buffer(Vulkan_Info *info, VkBuffer *buffer, VkDeviceMemory 
 	vkMapMemory(info->device, staging_buffer_memory, 0, buffer_size, 0, &data);
 	memcpy(data, in_data, buffer_size);
 	vkUnmapMemory(info->device, staging_buffer_memory);
-
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 buffer_size, 
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
-						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT | VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT,
-						 *buffer,
-						 *memory);
 
 	vulkan_copy_buffer(info, staging_buffer, *buffer, buffer_size);
 	
@@ -988,7 +960,7 @@ vulkan_create_descriptor_sets(Vulkan_Info *info) {
 		VkDescriptorBufferInfo buffer_info = {};
 	    buffer_info.buffer = info->combined_buffer;
 	    buffer_info.offset = info->uniforms_offset[i];
-	    buffer_info.range = sizeof(Uniform_Buffer_Object);
+	    buffer_info.range = info->uniform_size;
 
 		VkDescriptorImageInfo image_info = {};
 		image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1021,21 +993,6 @@ vulkan_setup_uniform_buffers(Vulkan_Info *info) {
 	VkDeviceSize buffer_size = VK_WHOLE_SIZE;
 	VkDeviceSize offset = info->uniforms_offset[0];
 	vkMapMemory(info->device, info->combined_buffer_memory, offset, buffer_size, 0, &info->uniform_buffers_mapped);
-}
-
-float32 degrees = 0.0f;
-
-internal void
-vulkan_update_uniform_buffers(Vulkan_Info *info, u32 current_image) {
-	//degrees += 0.01f;
-	u32 offset = sizeof(Uniform_Buffer_Object) * current_image;
-
-	Uniform_Buffer_Object ubo = {};
-	ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
-	ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
-	ubo.projection = perspective_projection(45.0f, (float32)info->swap_chain_extent.width / (float32)info->swap_chain_extent.height, 0.1f, 10.0f);
-	ubo.projection.E[1][1] *= -1;
-	memcpy((char*)info->uniform_buffers_mapped + offset, &ubo, sizeof(ubo));
 }
 
 internal void
@@ -1204,15 +1161,9 @@ vulkan_cleanup(Vulkan_Info *info) {
 	vkDestroyDescriptorPool(info->device, info->descriptor_pool, nullptr);
 	vkDestroyDescriptorSetLayout(info->device, info->descriptor_set_layout, nullptr);
 
-	// Vertex buffer
-	/*
-	vkDestroyBuffer(info->device, info->vertex_buffer, nullptr);
-	vkFreeMemory(info->device, info->vertex_buffer_memory, nullptr);
-
-	// Index buffer
-	vkDestroyBuffer(info->device, info->index_buffer, nullptr);
-	vkFreeMemory(info->device, info->index_buffer_memory, nullptr);
-	*/
+	vkDestroyBuffer(info->device, info->combined_buffer, nullptr);
+	vkFreeMemory(info->device, info->combined_buffer_memory, nullptr);
+	
 	vkDestroyPipeline(info->device, info->graphics_pipeline, nullptr);
 	vkDestroyPipelineLayout(info->device, info->pipeline_layout, nullptr);
 	
@@ -1237,79 +1188,13 @@ vulkan_cleanup(Vulkan_Info *info) {
 }
 
 internal void
-vulkan_record_command_buffer(Vulkan_Info *info, VkCommandBuffer command_buffer, u32 image_index) {
-	VkCommandBufferBeginInfo begin_info = {};
-	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin_info.flags = 0;				   // Optional
-	begin_info.pInheritanceInfo = nullptr; // Optional
-	if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
-	}	
-
-	VkRenderPassBeginInfo render_pass_info = {};
-	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = info->render_pass;
-	render_pass_info.framebuffer = info->swap_chain_framebuffers[image_index];
-	render_pass_info.renderArea.offset = {0, 0};
-	render_pass_info.renderArea.extent = info->swap_chain_extent;
-
-	VkClearValue clear_values[2];
-	clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-	clear_values[1].depthStencil = {1.0f, 0};
-	render_pass_info.clearValueCount = ARRAY_COUNT(clear_values);
-	render_pass_info.pClearValues = clear_values;
-
-	vkCmdBeginRenderPass(command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-	vkCmdBindPipeline(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->graphics_pipeline);
-	
-	VkViewport viewport = {};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = static_cast<float>(info->swap_chain_extent.width);
-	viewport.height = static_cast<float>(info->swap_chain_extent.height);
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(command_buffer, 0, 1, &viewport);
-
-	VkRect2D scissor= {};
-	scissor.offset = {0, 0};
-	scissor.extent = info->swap_chain_extent;
-	vkCmdSetScissor(command_buffer, 0, 1, &scissor);
-
-	// Drawing Buffers
-	/*
-	VkBuffer vertex_buffers[] = { info->vertex_buffer };
-	VkDeviceSize offsets[] = { 0 };
-	vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
-	vkCmdBindIndexBuffer(command_buffer, info->index_buffer, 0, VK_INDEX_TYPE_UINT16);
-	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->pipeline_layout, 0, 1, &info->descriptor_sets[info->current_frame], 0, nullptr);
-	vkCmdDrawIndexed(command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
-	*/
-
-	VkBuffer buffers[] = { info->combined_buffer };
-	VkDeviceSize offsets[] = { 0 };
-	vkCmdBindVertexBuffers(command_buffer, 0, 1, buffers, offsets);
-	vkCmdBindIndexBuffer(command_buffer, info->combined_buffer, sizeof(vertices), VK_INDEX_TYPE_UINT16);
-	vkCmdBindDescriptorSets(command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->pipeline_layout, 0, 1, &info->descriptor_sets[info->current_frame], 0, nullptr);
-	vkCmdDrawIndexed(command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
-
-	vkCmdEndRenderPass(command_buffer);
-
-	if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
-	}
-}
-
-internal void
-vulkan_draw_frame(Vulkan_Info *info) {
-	if (info->minimized)
-		return;
+vulkan_start_frame(Vulkan_Info *info) {
+	info->command_buffer = info->command_buffers[info->current_frame];
 
 	// Waiting for the previous frame
 	vkWaitForFences(info->device, 1, &info->in_flight_fence[info->current_frame], VK_TRUE, UINT64_MAX);
 	
-	u32 image_index;
-	VkResult result = vkAcquireNextImageKHR(info->device, info->swap_chain, UINT64_MAX, info->image_available_semaphore[info->current_frame], VK_NULL_HANDLE, &image_index);
+	VkResult result = vkAcquireNextImageKHR(info->device, info->swap_chain, UINT64_MAX, info->image_available_semaphore[info->current_frame], VK_NULL_HANDLE, &info->image_index);
 	
 	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		vulkan_recreate_swap_chain(info);
@@ -1319,13 +1204,55 @@ vulkan_draw_frame(Vulkan_Info *info) {
 	}
 
 	vkResetFences(info->device, 1, &info->in_flight_fence[info->current_frame]);
+	vkResetCommandBuffer(info->command_buffer, 0);
 
-	vkResetCommandBuffer(info->command_buffers[info->current_frame], 0);
+	VkCommandBufferBeginInfo begin_info = {};
+	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	begin_info.flags = 0;				   // Optional
+	begin_info.pInheritanceInfo = nullptr; // Optional
+	if (vkBeginCommandBuffer(info->command_buffer, &begin_info) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
+	}	
 
+	VkClearValue clear_values[2];
+	clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+	clear_values[1].depthStencil = {1.0f, 0};
 
-	vulkan_record_command_buffer(info, info->command_buffers[info->current_frame], image_index);
+	VkRenderPassBeginInfo render_pass_info = {};
+	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	render_pass_info.renderPass = info->render_pass;
+	render_pass_info.framebuffer = info->swap_chain_framebuffers[info->image_index];
+	render_pass_info.renderArea.offset = {0, 0};
+	render_pass_info.renderArea.extent = info->swap_chain_extent;
+	render_pass_info.clearValueCount = ARRAY_COUNT(clear_values);
+	render_pass_info.pClearValues = clear_values;
 
-	vulkan_update_uniform_buffers(info, info->current_frame);
+	vkCmdBeginRenderPass(info->command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+
+	VkViewport viewport = {};
+	viewport.x = 0.0f;
+	viewport.y = 0.0f;
+	viewport.width = static_cast<float>(info->swap_chain_extent.width);
+	viewport.height = static_cast<float>(info->swap_chain_extent.height);
+	viewport.minDepth = 0.0f;
+	viewport.maxDepth = 1.0f;
+	vkCmdSetViewport(info->command_buffer, 0, 1, &viewport);
+
+	VkRect2D scissor = {};
+	scissor.offset = {0, 0};
+	scissor.extent = info->swap_chain_extent;
+	vkCmdSetScissor(info->command_buffer, 0, 1, &scissor);
+
+	vkCmdBindPipeline(info->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->graphics_pipeline);
+}
+
+internal void
+vulkan_draw_frame(Vulkan_Info *info) {
+	vkCmdEndRenderPass(info->command_buffer);
+
+	if (vkEndCommandBuffer(info->command_buffer) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
+	}
 
 	// Submitting the command buffer
 	VkSemaphore wait_semaphores[] = { info->image_available_semaphore[info->current_frame] };
@@ -1347,7 +1274,7 @@ vulkan_draw_frame(Vulkan_Info *info) {
 	}
 
 	// Presentation
-	VkSwapchainKHR swap_chains[] = { info->swap_chain};
+	VkSwapchainKHR swap_chains[] = { info->swap_chain };
 	
 	VkPresentInfoKHR present_info = {};
 	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -1355,10 +1282,10 @@ vulkan_draw_frame(Vulkan_Info *info) {
 	present_info.pWaitSemaphores = signal_semaphores;
 	present_info.swapchainCount = 1;
 	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &image_index;
+	present_info.pImageIndices = &info->image_index;
 	present_info.pResults = nullptr; // Optional
 
-	result = vkQueuePresentKHR(info->present_queue, &present_info);
+	VkResult result = vkQueuePresentKHR(info->present_queue, &present_info);
 
 	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || info->framebuffer_resized) {
 		info->framebuffer_resized = false;
@@ -1409,8 +1336,6 @@ vulkan_create_texture_image(Vulkan_Info *info, Bitmap *bitmap) {
 
 	vulkan_create_image(info->device, info->physical_device, bitmap->width, bitmap->height, info->texture_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, info->texture_image, info->texture_image_memory);
 
-
-
 	vulkan_transition_image_layout(info, info->texture_image, info->texture_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 	vulkan_copy_buffer_to_image(info, staging_buffer, info->texture_image, (u32)bitmap->width, (u32)bitmap->height);
 	vulkan_transition_image_layout(info, info->texture_image, info->texture_image_format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -1451,4 +1376,10 @@ vulkan_create_texture_sampler(Vulkan_Info *info) {
 	if (vkCreateSampler(info->device, &sampler_info, nullptr, &info->texture_sampler) != VK_SUCCESS) {
         logprint("vulkan_create_texture_sampler()", "failed to create texture sampler\n");
     }
+}
+
+internal void
+vulkan_update_uniform_buffer_object(Uniform_Buffer_Object ubo, Matrices matrices) {
+	u32 offset = u32(vulkan_info.uniforms_offset[vulkan_info.current_frame] - vulkan_info.uniforms_offset[0]);
+	memcpy((char*)ubo.handle + offset, &matrices, sizeof(matrices));
 }
