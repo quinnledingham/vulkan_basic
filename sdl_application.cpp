@@ -58,6 +58,7 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #include "char_array.h"
 #include "assets.h"
 #include "data_structs.h"
+#include "render.h"
 
 #ifdef OPENGL
 
@@ -69,6 +70,7 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #endif // OPENGL/ VULKAN
 
 #include "application.h"
+
 #include "print.cpp"
 #include "assets.cpp"
 
@@ -277,6 +279,7 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 
 	vulkan_create_command_buffers(info);
 	vulkan_create_sync_objects(info);
+	vulkan_init_presentation_settings(info);
 }
 
 internal void
@@ -332,16 +335,17 @@ sdl_update_time(App_Time *time) {
 
     // fps
     time->frames_per_s = (float32)(1.0 / time->frame_time_s);
-	
-	if (time->avg_fps_sum_count == UINT32_MAX) {
-		time->avg_fps_sum_count = 0;
-		time->avg_fps = 0.0f;
-		logprint("sdl_update_time()", "reseted avg fps\n");
-	}
 
-	time->avg_fps *= time->avg_fps_sum_count;
-	time->avg_fps += time->frames_per_s;
-	time->avg_fps /= ++time->avg_fps_sum_count;
+	time->new_avg = false;
+	time->avg_timer += time->frame_time_s;
+	time->avg_frames++;
+	time->avg += time->frames_per_s;
+	if (time->avg_timer >= 1.0f) {
+		time->avg = time->avg / time->avg_frames;
+		time->new_avg = true;
+		time->avg_frames = 0;
+		time->avg_timer = 0.0f;
+	}
 }
 
 int main(int argc, char *argv[]) {
@@ -383,16 +387,18 @@ int main(int argc, char *argv[]) {
 	//Vulkan_Info vulkan_info = {};
 	sdl_init_vulkan(&vulkan_info, sdl_window);
 	//vulkan_update_uniform_buffer_object(matrices_ubo, ubo);
-	VkBuffer buffers[] = { vulkan_info.combined_buffer };
 	VkDeviceSize offsets[] = { 0 };
 #endif
+
+	render_clear_color({ 0.0f, 0.2f, 0.4f, 1.0f });
 
     while(1) {
     	if (sdl_process_input())
     		break;
 
 		sdl_update_time(&app.time);
-		print("fps: %f,    avg_fps: %f\n", app.time.frames_per_s, app.time.avg_fps);
+		if (app.time.new_avg)
+			print("fps: %f\n", app.time.avg);
 
 #if OPENGL
 		 u32 gl_clear_flags = 
@@ -407,19 +413,15 @@ int main(int argc, char *argv[]) {
 
 		SDL_GL_SwapWindow(sdl_window);		
 #elif VULKAN
-		if (vulkan_info.minimized)
-			continue;
-
-		vulkan_start_frame(&vulkan_info);
+		render_start_frame();
 
 		// Drawing Buffer
-		
-		vkCmdBindVertexBuffers(vulkan_info.command_buffer, 0, 1, buffers, offsets);
+		vkCmdBindVertexBuffers(vulkan_info.command_buffer, 0, 1, &vulkan_info.combined_buffer, offsets);
 		vkCmdBindIndexBuffer(vulkan_info.command_buffer, vulkan_info.combined_buffer, sizeof(vertices), VK_INDEX_TYPE_UINT32);
 		vkCmdBindDescriptorSets(vulkan_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_info.pipeline_layout, 0, 1, &vulkan_info.descriptor_sets[vulkan_info.current_frame], 0, nullptr);
 		vkCmdDrawIndexed(vulkan_info.command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
 		
-		vulkan_draw_frame(&vulkan_info);
+		render_end_frame();
 #endif // VULKAN
     }
 

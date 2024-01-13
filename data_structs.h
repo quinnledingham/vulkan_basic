@@ -3,7 +3,7 @@
 template<typename T>
 struct Arr {
 private:
-	T *data;
+	T *data = 0;
 	u32 size;  // number of elements of memory allocated at data
 
 public:

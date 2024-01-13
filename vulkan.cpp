@@ -375,14 +375,14 @@ vulkan_create_swap_chain(Vulkan_Info *info) {
 	create_info.clipped = VK_TRUE;
 	create_info.oldSwapchain = VK_NULL_HANDLE;
 
-	if (vkCreateSwapchainKHR(info->device, &create_info, nullptr, &info->swap_chain)) {
+	if (vkCreateSwapchainKHR(info->device, &create_info, nullptr, &info->swap_chains[0])) {
 		logprint("vulkan_create_swap_chain()", "failed to create swap chain\n");
 	}
 	
 	u32 swap_chain_images_count = 0;
-	vkGetSwapchainImagesKHR(info->device, info->swap_chain, &swap_chain_images_count, nullptr);
+	vkGetSwapchainImagesKHR(info->device, info->swap_chains[0], &swap_chain_images_count, nullptr);
 	info->swap_chain_images.resize(swap_chain_images_count);
-	vkGetSwapchainImagesKHR(info->device, info->swap_chain, &swap_chain_images_count, info->swap_chain_images.get_data());
+	vkGetSwapchainImagesKHR(info->device, info->swap_chains[0], &swap_chain_images_count, info->swap_chain_images.get_data());
 
 	info->swap_chain_image_format = surface_format.format;
 	info->swap_chain_extent = extent;
@@ -747,7 +747,7 @@ internal void
 vulkan_create_sync_objects(Vulkan_Info *info) {
 	info->image_available_semaphore.resize(info->MAX_FRAMES_IN_FLIGHT);
 	info->render_finished_semaphore.resize(info->MAX_FRAMES_IN_FLIGHT);
-	info->in_flight_fence.resize(info->MAX_FRAMES_IN_FLIGHT);
+	//info->in_flight_fence.resize(info->MAX_FRAMES_IN_FLIGHT);
 
 	VkSemaphoreCreateInfo semaphore_info = {};
 	semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1109,7 +1109,7 @@ vulkan_cleanup_swap_chain(Vulkan_Info *info) {
 		vkDestroyImageView(info->device, info->swap_chain_image_views[i], nullptr);
 	}
 
-	vkDestroySwapchainKHR(info->device, info->swap_chain, nullptr);
+	vkDestroySwapchainKHR(info->device, info->swap_chains[0], nullptr);
 }
 
 internal void
@@ -1185,117 +1185,6 @@ vulkan_cleanup(Vulkan_Info *info) {
 		vulkan_destroy_debug_utils_messenger_ext(info->instance, info->debug_messenger, nullptr);
 
 	vkDestroyInstance(info->instance, nullptr);
-}
-
-internal void
-vulkan_start_frame(Vulkan_Info *info) {
-	info->command_buffer = info->command_buffers[info->current_frame];
-
-	// Waiting for the previous frame
-	vkWaitForFences(info->device, 1, &info->in_flight_fence[info->current_frame], VK_TRUE, UINT64_MAX);
-	
-	VkResult result = vkAcquireNextImageKHR(info->device, info->swap_chain, UINT64_MAX, info->image_available_semaphore[info->current_frame], VK_NULL_HANDLE, &info->image_index);
-	
-	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-		vulkan_recreate_swap_chain(info);
-		return;
-	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
-		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
-	}
-
-	vkResetFences(info->device, 1, &info->in_flight_fence[info->current_frame]);
-	vkResetCommandBuffer(info->command_buffer, 0);
-
-	VkCommandBufferBeginInfo begin_info = {};
-	begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-	begin_info.flags = 0;				   // Optional
-	begin_info.pInheritanceInfo = nullptr; // Optional
-	if (vkBeginCommandBuffer(info->command_buffer, &begin_info) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
-	}	
-
-	VkClearValue clear_values[2];
-	clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
-	clear_values[1].depthStencil = {1.0f, 0};
-
-	VkRenderPassBeginInfo render_pass_info = {};
-	render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-	render_pass_info.renderPass = info->render_pass;
-	render_pass_info.framebuffer = info->swap_chain_framebuffers[info->image_index];
-	render_pass_info.renderArea.offset = {0, 0};
-	render_pass_info.renderArea.extent = info->swap_chain_extent;
-	render_pass_info.clearValueCount = ARRAY_COUNT(clear_values);
-	render_pass_info.pClearValues = clear_values;
-
-	vkCmdBeginRenderPass(info->command_buffer, &render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
-
-	VkViewport viewport = {};
-	viewport.x = 0.0f;
-	viewport.y = 0.0f;
-	viewport.width = static_cast<float>(info->swap_chain_extent.width);
-	viewport.height = static_cast<float>(info->swap_chain_extent.height);
-	viewport.minDepth = 0.0f;
-	viewport.maxDepth = 1.0f;
-	vkCmdSetViewport(info->command_buffer, 0, 1, &viewport);
-
-	VkRect2D scissor = {};
-	scissor.offset = {0, 0};
-	scissor.extent = info->swap_chain_extent;
-	vkCmdSetScissor(info->command_buffer, 0, 1, &scissor);
-
-	vkCmdBindPipeline(info->command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, info->graphics_pipeline);
-}
-
-internal void
-vulkan_draw_frame(Vulkan_Info *info) {
-	vkCmdEndRenderPass(info->command_buffer);
-
-	if (vkEndCommandBuffer(info->command_buffer) != VK_SUCCESS) {
-		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
-	}
-
-	// Submitting the command buffer
-	VkSemaphore wait_semaphores[] = { info->image_available_semaphore[info->current_frame] };
-	VkSemaphore signal_semaphores[] = { info->render_finished_semaphore[info->current_frame] };
-	VkPipelineStageFlags wait_stages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-
-	VkSubmitInfo submit_info = {};
-	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit_info.waitSemaphoreCount = 1;
-	submit_info.pWaitSemaphores = wait_semaphores;
-	submit_info.pWaitDstStageMask = wait_stages;
-	submit_info.commandBufferCount = 1;
-	submit_info.pCommandBuffers = &info->command_buffers[info->current_frame];	
-	submit_info.signalSemaphoreCount = 1;
-	submit_info.pSignalSemaphores = signal_semaphores;
-
-	if (vkQueueSubmit(info->graphics_queue, 1, &submit_info, info->in_flight_fence[info->current_frame]) != VK_SUCCESS) {
-		logprint("vulkan_draw_frame()", "failed to submit draw command buffer\n");
-	}
-
-	// Presentation
-	VkSwapchainKHR swap_chains[] = { info->swap_chain };
-	
-	VkPresentInfoKHR present_info = {};
-	present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-	present_info.waitSemaphoreCount = 1;
-	present_info.pWaitSemaphores = signal_semaphores;
-	present_info.swapchainCount = 1;
-	present_info.pSwapchains = swap_chains;
-	present_info.pImageIndices = &info->image_index;
-	present_info.pResults = nullptr; // Optional
-
-	VkResult result = vkQueuePresentKHR(info->present_queue, &present_info);
-
-	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || info->framebuffer_resized) {
-		info->framebuffer_resized = false;
-		vulkan_recreate_swap_chain(info);
-		return;
-	} else if (result != VK_SUCCESS) {
-		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
-	}
-
-	info->current_frame = (info->current_frame + 1) % info->MAX_FRAMES_IN_FLIGHT;
 }
 
 internal void
@@ -1382,4 +1271,129 @@ internal void
 vulkan_update_uniform_buffer_object(Uniform_Buffer_Object ubo, Matrices matrices) {
 	u32 offset = u32(vulkan_info.uniforms_offset[vulkan_info.current_frame] - vulkan_info.uniforms_offset[0]);
 	memcpy((char*)ubo.handle + offset, &matrices, sizeof(matrices));
+}
+
+internal void
+vulkan_init_presentation_settings(Vulkan_Info *info) {
+
+	// Start frame
+	info->begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+	info->begin_info.flags = 0;				   // Optional
+	info->begin_info.pInheritanceInfo = nullptr; // Optional
+
+	info->clear_values[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
+	info->clear_values[1].depthStencil = {1.0f, 0};
+
+	info->render_pass_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+	info->render_pass_info.renderPass = info->render_pass;
+	info->render_pass_info.framebuffer = info->swap_chain_framebuffers[info->image_index];
+	info->render_pass_info.renderArea.offset = {0, 0};
+	info->render_pass_info.renderArea.extent = info->swap_chain_extent;
+	info->render_pass_info.clearValueCount = ARRAY_COUNT(info->clear_values);
+	info->render_pass_info.pClearValues = info->clear_values;
+
+	info->scissor.offset = {0, 0};
+	info->scissor.extent = info->swap_chain_extent;
+
+	info->viewport.x = 0.0f;
+	info->viewport.y = 0.0f;
+	info->viewport.width = static_cast<float>(info->swap_chain_extent.width);
+	info->viewport.height = static_cast<float>(info->swap_chain_extent.height);
+	info->viewport.minDepth = 0.0f;
+	info->viewport.maxDepth = 1.0f;
+
+	// End of frame
+	info->submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+	info->submit_info.waitSemaphoreCount = 1;
+	info->submit_info.pWaitSemaphores = &info->image_available_semaphore[info->current_frame];
+	info->submit_info.pWaitDstStageMask = info->wait_stages;
+	info->submit_info.commandBufferCount = 1;
+	info->submit_info.pCommandBuffers = &info->command_buffers[info->current_frame];	
+	info->submit_info.signalSemaphoreCount = 1;
+	info->submit_info.pSignalSemaphores = &info->render_finished_semaphore[info->current_frame];
+
+	info->present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+	info->present_info.waitSemaphoreCount = 1;
+	info->present_info.pWaitSemaphores = &info->render_finished_semaphore[info->current_frame];
+	info->present_info.swapchainCount = ARRAY_COUNT(info->swap_chains);
+	info->present_info.pSwapchains = info->swap_chains;
+	info->present_info.pImageIndices = &info->image_index;
+	info->present_info.pResults = nullptr; // Optional
+}
+
+// Requires updated current_frame and image_index
+inline void
+vulkan_update_presentation_settings(Vulkan_Info *info) {
+
+	// Start of frame
+	info->render_pass_info.framebuffer = info->swap_chain_framebuffers[info->image_index];
+
+	// End of frame
+	info->submit_info.pWaitSemaphores = &info->image_available_semaphore[info->current_frame];
+	info->submit_info.pCommandBuffers = &info->command_buffers[info->current_frame];	
+	info->submit_info.pSignalSemaphores = &info->render_finished_semaphore[info->current_frame];
+
+	info->present_info.pWaitSemaphores = &info->render_finished_semaphore[info->current_frame];
+	info->present_info.pImageIndices = &info->image_index;
+}
+
+//
+// Render
+//
+
+void render_clear_color(Vector4 color) {
+	vulkan_info.clear_values[0].color = {{color.r, color.g, color.b, color.a}};
+}
+
+void render_start_frame() {
+	vulkan_info.command_buffer = vulkan_info.command_buffers[vulkan_info.current_frame];
+
+	// Waiting for the previous frame
+	vkWaitForFences(vulkan_info.device, 1, &vulkan_info.in_flight_fence[vulkan_info.current_frame], VK_TRUE, UINT64_MAX);
+	VkResult result = vkAcquireNextImageKHR(vulkan_info.device, vulkan_info.swap_chains[0], UINT64_MAX, vulkan_info.image_available_semaphore[vulkan_info.current_frame], VK_NULL_HANDLE, &vulkan_info.image_index);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		vulkan_recreate_swap_chain(&vulkan_info);
+		return;
+	} else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
+	}
+
+	vulkan_update_presentation_settings(&vulkan_info);
+
+	vkResetFences(vulkan_info.device, 1, &vulkan_info.in_flight_fence[vulkan_info.current_frame]);
+	vkResetCommandBuffer(vulkan_info.command_buffer, 0);
+	
+	if (vkBeginCommandBuffer(vulkan_info.command_buffer, &vulkan_info.begin_info) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to begin recording command buffer\n");
+	}	
+
+	vkCmdBeginRenderPass(vulkan_info.command_buffer, &vulkan_info.render_pass_info, VK_SUBPASS_CONTENTS_INLINE);
+	vkCmdSetViewport(vulkan_info.command_buffer, 0, 1, &vulkan_info.viewport);
+	vkCmdSetScissor(vulkan_info.command_buffer, 0, 1, &vulkan_info.scissor);
+	vkCmdBindPipeline(vulkan_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_info.graphics_pipeline);
+}
+
+void render_end_frame() {
+	vkCmdEndRenderPass(vulkan_info.command_buffer);
+
+	if (vkEndCommandBuffer(vulkan_info.command_buffer) != VK_SUCCESS) {
+		logprint("vulkan_record_command_buffer()", "failed to record command buffer\n");
+	}
+
+	if (vkQueueSubmit(vulkan_info.graphics_queue, 1, &vulkan_info.submit_info, vulkan_info.in_flight_fence[vulkan_info.current_frame]) != VK_SUCCESS) {
+		logprint("vulkan_draw_frame()", "failed to submit draw command buffer\n");
+	}
+	
+	VkResult result = vkQueuePresentKHR(vulkan_info.present_queue, &vulkan_info.present_info);
+
+	if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || vulkan_info.framebuffer_resized) {
+		vulkan_info.framebuffer_resized = false;
+		vulkan_recreate_swap_chain(&vulkan_info);
+		return;
+	} else if (result != VK_SUCCESS) {
+		logprint("vulkan_draw_frame()", "failed to acquire swap chain");
+	}
+
+	vulkan_info.current_frame = (vulkan_info.current_frame + 1) % vulkan_info.MAX_FRAMES_IN_FLIGHT;
 }

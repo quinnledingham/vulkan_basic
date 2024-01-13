@@ -74,7 +74,7 @@ struct Vulkan_Info {
 	VkCommandBuffer command_buffer;             // set at the start of the frame for the current frame
 
 	// swap_chain
-	VkSwapchainKHR swap_chain;
+	VkSwapchainKHR swap_chains[1];
 	Arr<VkImage> swap_chain_images;
 	u32 image_index;                            // set at the start of the frame for the current frame
 	VkFormat swap_chain_image_format;
@@ -85,7 +85,7 @@ struct Vulkan_Info {
 	// sync
 	Arr<VkSemaphore> image_available_semaphore;
 	Arr<VkSemaphore> render_finished_semaphore;
-	Arr<VkFence> in_flight_fence;
+	VkFence in_flight_fence[MAX_FRAMES_IN_FLIGHT];
 
 	// Buffers
 	u32 vertices_offset;
@@ -112,6 +112,17 @@ struct Vulkan_Info {
 	VkImage depth_image;
 	VkDeviceMemory depth_image_memory;
 	VkImageView depth_image_view;
+
+	// Presentation
+	VkCommandBufferBeginInfo begin_info;
+	VkClearValue clear_values[2];
+	VkViewport viewport;
+	VkRect2D scissor;
+
+	VkPipelineStageFlags wait_stages[1] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+	VkRenderPassBeginInfo render_pass_info;
+	VkSubmitInfo submit_info;
+	VkPresentInfoKHR present_info;
 };
 
 global Vulkan_Info vulkan_info;

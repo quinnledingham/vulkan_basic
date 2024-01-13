@@ -36,3 +36,30 @@ opengl_update_uniform_buffer_object(Uniform_Buffer_Object ubo, Matrices matrices
     offset = BUFFER_SUB_DATA(target, offset, matrices.projection);
     glBindBuffer(target, 0);
 }
+
+//
+// Render
+//
+
+struct OpenGL_Info {
+    
+}
+
+void render_clear_color(Vector4 color) {
+    glClearColor(color.r, color.g, color.b, color.a);
+}
+
+void render_start_frame() {
+    u32 gl_clear_flags = 
+            GL_COLOR_BUFFER_BIT  | 
+            GL_DEPTH_BUFFER_BIT  | 
+            GL_STENCIL_BUFFER_BIT;
+    
+    glClear(gl_clear_flags);
+}
+
+void render_end_frame() {
+#ifdef SDL
+    SDL_GL_SwapWindow(sdl_window); 
+#endif // SDL
+}

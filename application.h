@@ -8,8 +8,10 @@ struct App_Time {
 
 	float32 frames_per_s;
 
-	u32 avg_fps_sum_count;
-	float32 avg_fps;
+	u32 avg_frames; // counting the amount of frames
+	float32 avg; // avg frame time in seconds over the course of the last second
+	float32 avg_timer;
+	bool8 new_avg; // flag that there was a new avg produced
 };
 
 struct App {
