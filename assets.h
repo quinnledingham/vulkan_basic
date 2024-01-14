@@ -9,6 +9,13 @@
 #include <stb_truetype.h>
 
 /*
+Assets and render are tied tightly together because a lot of the assets
+have to interact with the renderer. What this means is that code in the
+render code (opengl.cpp and vulkan.cpp) contains these structs.
+@TODO maybe they should not be.
+*/
+
+/*
 ../assets/bitmaps/test.png
 
 file_path = ../assets/bitmaps/test.png
@@ -21,6 +28,8 @@ struct File {
 	u32 size;
 	void *memory;
 };
+
+File load_file(const char *filepath);
 
 struct Bitmap {
 	u8 *memory;
@@ -39,12 +48,6 @@ struct Bitmap {
 	void *gpu_handle; // information about bitmap on gpu
 };
 
-struct Vertex {
-	Vector3 pos;
-	Vector3 color;
-	Vector2 uv;
-};
-
 struct Uniform_Buffer_Object {
 	void *handle; // OpenGL = u32; Vulkan = void*
 	u32 size;
@@ -61,14 +64,26 @@ struct Matrices {
 	Matrix_4x4 projection;
 };
 
+struct Vertex {
+	Vector3 pos;
+	Vector3 color;
+	Vector2 uv;
+};
+
 struct Mesh {
 	Vertex *vertices;
 	u32 vertices_count;
 
 	u32 *indices;
 	u32 indices_count;
-
-	void *gpu_info;
+    /*
+    const u32 vertex_size = sizeof(Vertex);
+    const u32 vertex_elements = 3;
+    const u32 vertex_types[vertex_elements] = {};
+    const u32 vertex_sizes[vertex_elements] = {};
+    const u32 vertex_offsets[vertex_elements] = {};
+    */
+	void *gpu_info; // info that is used to draw this mesh
 };
 
 enum shader_types

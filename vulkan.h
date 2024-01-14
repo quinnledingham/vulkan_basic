@@ -29,8 +29,9 @@ struct Vulkan_Swap_Chain_Support_Details {
 	u32 present_modes_count;
 };
 
+// info to setup a graphics pipeline
 struct Vulkan_Graphics_Pipeline {
-	File vert; // compiled
+	File vert; // compiled shaders
 	File frag;
 	VkVertexInputBindingDescription binding_description;
 	VkVertexInputAttributeDescription attribute_descriptions[3];
@@ -87,12 +88,10 @@ struct Vulkan_Info {
 	Arr<VkSemaphore> render_finished_semaphore;
 	VkFence in_flight_fence[MAX_FRAMES_IN_FLIGHT];
 
-	// Buffers
-	u32 vertices_offset;
-	u32 indices_offset;
-	
-	VkBuffer combined_buffer;
-	VkDeviceMemory combined_buffer_memory;
+	// Buffers	
+    VkBuffer combined_buffer;
+    VkDeviceMemory combined_buffer_memory;
+    u32 combined_buffer_offset; // where to enter new bytes
 
 	void *uniform_buffers_mapped;
 	VkDeviceSize uniforms_offset[MAX_FRAMES_IN_FLIGHT];
@@ -126,3 +125,14 @@ struct Vulkan_Info {
 };
 
 global Vulkan_Info vulkan_info;
+
+struct Vulkan_Mesh {
+    //VkBuffer buffer;
+    //VkDeviceMemory memory;
+    //void *mapped_memory;
+
+    u32 vertices_offset;
+    u32 indices_offset;
+    //u32 uniforms_offsets[vulkan_info.MAX_FRAMES_IN_FLIGHT];
+    //u32 uniform_size; // size of the individual uniforms
+};

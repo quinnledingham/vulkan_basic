@@ -58,31 +58,24 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #include "char_array.h"
 #include "assets.h"
 #include "data_structs.h"
-#include "render.h"
 
 #ifdef OPENGL
 
+#include "opengl.h"
+#include "opengl.cpp"
 
 #elif VULKAN
 
-	#include "vulkan.h"
+#include "vulkan.h"
+#include "vulkan.cpp"
 
-#endif // OPENGL/ VULKAN
+#endif // OPENGL / VULKAN
 
+#include "render.h"
 #include "application.h"
 
 #include "print.cpp"
 #include "assets.cpp"
-
-#ifdef OPENGL
-
-	#include "opengl.cpp"
-
-#elif VULKAN
-
-	#include "vulkan.cpp"
-
-#endif // OPENGL/ VULKAN
 
 
 const Vertex vertices[8] = {
@@ -132,27 +125,22 @@ sdl_init_opengl(SDL_Window *sdl_window)
     print("Renderer: %s\n", glGetString(GL_RENDERER));
     print("Version:  %s\n", glGetString(GL_VERSION));
 
+    // Not just initing
+    
 	// GL defaults
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glEnable(GL_BLEND);
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    //glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glPatchParameteri(GL_PATCH_VERTICES, 4); 
-	glEnable(GL_DEPTH_TEST);
-	glEnable(GL_FRAMEBUFFER_SRGB); 
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_FRAMEBUFFER_SRGB); 
 	
-	shader.files[VERTEX_SHADER].filepath = "../assets/shaders/basic.vert";
-	shader.files[FRAGMENT_SHADER].filepath = "../assets/shaders/basic.frag";
-	load_shader(&shader);
-	compile_shader(&shader);
+    shader.files[VERTEX_SHADER].filepath = "../assets/shaders/basic.vert";
+    shader.files[FRAGMENT_SHADER].filepath = "../assets/shaders/basic.frag";
+    load_shader(&shader);
+    compile_shader(&shader);
 
-	// set up test mesh
-	mesh.vertices_count = 8;
-	mesh.indices_count = 12;
-	mesh.vertices = ARRAY_MALLOC(Vertex, mesh.vertices_count);
-	mesh.indices = ARRAY_MALLOC(u32, mesh.indices_count);
-	memcpy(mesh.vertices, vertices, sizeof(vertices));
-	memcpy(mesh.indices, indices, sizeof(indices));
-	init_gpu_mesh(&mesh);
+    opengl_info.sdl_window = sdl_window;
 
 	matrices_ubo = opengl_init_uniform_buffer_object(sizeof(Matrices), 0);
 
@@ -160,16 +148,16 @@ sdl_init_opengl(SDL_Window *sdl_window)
 	s32 window_height;
 	SDL_GetWindowSize(sdl_window, &window_width, &window_height);
 
-	u32 tag_uniform_block_index = glGetUniformBlockIndex(shader.handle, "ubo");
+    u32 tag_uniform_block_index = glGetUniformBlockIndex(shader.handle, "ubo");
     glUniformBlockBinding(shader.handle, tag_uniform_block_index, matrices_ubo.opengl());
 
-	Matrices ubo = {};
-	ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
-	ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
-	ubo.projection = perspective_projection(45.0f, (float32)window_width / (float32)window_height, 0.1f, 10.0f);
-	ubo.projection.E[1][1] *= 1;
+    Matrices ubo = {};
+    ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
+    ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
+    ubo.projection = perspective_projection(45.0f, (float32)window_width / (float32)window_height, 0.1f, 10.0f);
+    ubo.projection.E[1][1] *= 1;
 
-	opengl_update_uniform_buffer_object(matrices_ubo, ubo);
+    //opengl_update_uniform_buffer_object(matrices_ubo, ubo);
 }
 
 internal void
@@ -231,10 +219,11 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	pipeline_info.attribute_descriptions[2].location = 2;
 	pipeline_info.attribute_descriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
 	pipeline_info.attribute_descriptions[2].offset = offsetof(Vertex, uv);
-
+    
 	vulkan_create_graphics_pipeline(info, &pipeline_info);
 
 	vulkan_create_command_pool(info);
+    vulkan_create_command_buffers(info);
 	vulkan_create_depth_resources(info);
 	vulkan_create_frame_buffers(info);
 
@@ -243,41 +232,23 @@ sdl_init_vulkan(Vulkan_Info *info, SDL_Window *sdl_window) {
 	free_bitmap(yogi);
 	vulkan_create_texture_image_view(info);
 	vulkan_create_texture_sampler(info);
-	
-	Matrices ubo = {};
-	ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
-	ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
-	ubo.projection = perspective_projection(45.0f, (float32)info->window_width / (float32)info->window_height, 0.1f, 10.0f);
-	ubo.projection.E[1][1] *= -1;
+    
+    vulkan_create_buffer(info->device, 
+                         info->physical_device,
+                         1000, 
+                         VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
+                         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+                         info->combined_buffer,
+                         info->combined_buffer_memory);
+    
 
-	info->uniforms_offset[0] = vulkan_get_alignment(sizeof(vertices) + sizeof(indices), 64);
-	info->uniforms_offset[1] = vulkan_get_alignment(info->uniforms_offset[0] + sizeof(Matrices), 64);
-	info->uniform_size = sizeof(Matrices);
-
-	u32 combined_size = (u32)info->uniforms_offset[1] + sizeof(Matrices);
-	void *memory = platform_malloc(combined_size);
-	memcpy(memory, (void*)&vertices, sizeof(vertices));
-	memcpy((char*)memory + sizeof(vertices), (void*)&indices, sizeof(indices));
-	memcpy((char*)memory + info->uniforms_offset[0], (void*)&ubo, sizeof(ubo));
-	memcpy((char*)memory + info->uniforms_offset[1], (void*)&ubo, sizeof(ubo));
-
-	vulkan_create_buffer(info->device, 
-						 info->physical_device,
-						 combined_size, 
-						 VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, 
-						 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
-						 info->combined_buffer,
-						 info->combined_buffer_memory);
-
-	vulkan_update_buffer(info, &info->combined_buffer, &info->combined_buffer_memory, memory, combined_size);
-	
-	//vulkan_setup_uniform_buffers(info);
-	//matrices_ubo.handle = info->uniform_buffers_mapped;
-	
+    info->uniforms_offset[0] = 0;
+    info->uniforms_offset[1] = vulkan_get_alignment(info->uniforms_offset[0] + sizeof(Matrices), 64);
+    info->uniform_size = sizeof(Matrices);
+    
 	vulkan_create_descriptor_pool(info);
 	vulkan_create_descriptor_sets(info);
 
-	vulkan_create_command_buffers(info);
 	vulkan_create_sync_objects(info);
 	vulkan_init_presentation_settings(info);
 }
@@ -384,14 +355,29 @@ int main(int argc, char *argv[]) {
 #ifdef OPENGL
 	sdl_init_opengl(sdl_window);
 #elif VULKAN
-	//Vulkan_Info vulkan_info = {};
-	sdl_init_vulkan(&vulkan_info, sdl_window);
-	//vulkan_update_uniform_buffer_object(matrices_ubo, ubo);
-	VkDeviceSize offsets[] = { 0 };
+    sdl_init_vulkan(&vulkan_info, sdl_window);
 #endif
 
+    Matrices ubo = {};
+    ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
+    ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f });
+    ubo.projection = perspective_projection(45.0f, (float32)window_width / (float32)window_height, 0.1f, 10.0f);
+    //ubo.projection.E[1][1] *= -1;
+    // @TODO figure out how to make opengl and vulkan get the same result with the same projection matrix
+
+    render_update_uniform_buffer_object(matrices_ubo, ubo);
+    
 	render_clear_color({ 0.0f, 0.2f, 0.4f, 1.0f });
 
+  	// set up test mesh
+	mesh.vertices_count = 8;
+	mesh.indices_count = 12;
+	mesh.vertices = ARRAY_MALLOC(Vertex, mesh.vertices_count);
+	mesh.indices = ARRAY_MALLOC(u32, mesh.indices_count);
+	memcpy(mesh.vertices, vertices, sizeof(vertices));
+	memcpy(mesh.indices, indices, sizeof(indices));
+	render_init_mesh(&mesh);
+    
     while(1) {
     	if (sdl_process_input())
     		break;
@@ -400,35 +386,21 @@ int main(int argc, char *argv[]) {
 		if (app.time.new_avg)
 			print("fps: %f\n", app.time.avg);
 
-#if OPENGL
-		 u32 gl_clear_flags = 
-            GL_COLOR_BUFFER_BIT  | 
-            GL_DEPTH_BUFFER_BIT  | 
-            GL_STENCIL_BUFFER_BIT;
-    
-        glClear(gl_clear_flags);
-				
+        render_start_frame();
+#if OPENGL		 				
 		use_shader(&shader);
-		draw_mesh(&mesh);
-
-		SDL_GL_SwapWindow(sdl_window);		
 #elif VULKAN
-		render_start_frame();
-
-		// Drawing Buffer
-		vkCmdBindVertexBuffers(vulkan_info.command_buffer, 0, 1, &vulkan_info.combined_buffer, offsets);
-		vkCmdBindIndexBuffer(vulkan_info.command_buffer, vulkan_info.combined_buffer, sizeof(vertices), VK_INDEX_TYPE_UINT32);
-		vkCmdBindDescriptorSets(vulkan_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_info.pipeline_layout, 0, 1, &vulkan_info.descriptor_sets[vulkan_info.current_frame], 0, nullptr);
-		vkCmdDrawIndexed(vulkan_info.command_buffer, ARRAY_COUNT(indices), 1, 0, 0, 0);
-		
-		render_end_frame();
-#endif // VULKAN
+        // Bind Uniform Buffer and Texture
+        vkCmdBindDescriptorSets(vulkan_info.command_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, vulkan_info.pipeline_layout, 0, 1, &vulkan_info.descriptor_sets[vulkan_info.current_frame], 0, nullptr);
+#endif // OPENGL / VULKAN
+        render_draw_mesh(&mesh);
+        render_end_frame();
     }
 
 #ifdef OPENGL
 
 #elif VULKAN
-	vkDeviceWaitIdle(vulkan_info.device);
+    vkDeviceWaitIdle(vulkan_info.device);
     vulkan_cleanup(&vulkan_info);
 #endif
 

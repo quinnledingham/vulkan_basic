@@ -72,101 +72,15 @@ free_bitmap(Bitmap bitmap) {
     stbi_image_free(bitmap.memory);
 }
 
-#ifdef OPENGL
-
-#elif VULKAN
-
-#endif // OPENGL / VULKAN
-
 //
 // Mesh
 //
-
-#ifdef OPENGL
-
-struct OpenGL_Mesh {
-    u32 vao;
-    u32 vbo;
-    u32 ebo;
-};
-
-void init_gpu_mesh(Mesh *mesh) {
-    OpenGL_Mesh *gl_mesh = (OpenGL_Mesh*)platform_malloc(sizeof(OpenGL_Mesh));
-
-    glGenVertexArrays(1, &gl_mesh->vao);
-    glGenBuffers(1, &gl_mesh->vbo);
-    glGenBuffers(1, &gl_mesh->ebo);
-    
-    glBindVertexArray(gl_mesh->vao);
-    glBindBuffer(GL_ARRAY_BUFFER, gl_mesh->vbo);
-    glBufferData(GL_ARRAY_BUFFER, mesh->vertices_count * sizeof(Vertex), &mesh->vertices[0], GL_STATIC_DRAW);  
-    
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_mesh->ebo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_count * sizeof(u32), &mesh->indices[0], GL_STATIC_DRAW);
-    
-    glEnableVertexAttribArray(0); // vertex positions
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)0);
-    glEnableVertexAttribArray(1); // vertex color
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, color));
-    glEnableVertexAttribArray(2); // vertex texture coords
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, uv));
-    
-    glBindVertexArray(0);
-
-    mesh->gpu_info = (void*)gl_mesh;
-}
-
-void draw_mesh(Mesh *mesh) {
-    OpenGL_Mesh *gl_mesh = (OpenGL_Mesh*)mesh->gpu_info;
-    glBindVertexArray(gl_mesh->vao);
-    glDrawElements(GL_TRIANGLES, mesh->indices_count, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
-}
 
 void free_mesh(Mesh *mesh) {
     platform_free(mesh->vertices);
     platform_free(mesh->indices);
     platform_free(mesh->gpu_info);
 }
-
-#elif VULKAN
-
-struct Vulkan_Mesh {
-    //VkBuffer buffer;
-    //VkDeviceMemory memory;
-    //void *mapped_memory;
-
-    u32 vertices_offset;
-    u32 indices_offset;
-    u32 uniforms_offsets[vulkan_info.MAX_FRAMES_IN_FLIGHT];
-    u32 uniform_size; // size of the individual uniforms
-};
-
-void init_gpu_mesh(Mesh *mesh) {
-/*
-    Vulkan_Mesh *vulkan_mesh = (Vulkan_Mesh*)platform_malloc(sizeof(Vulkan_Mesh));
-
-    u32 vertices_size = sizeof(mesh->vertices[0]) * sizeof(Vertex);
-    u32 indices_size = sizeof(mesh->indices[0]) * sizeof(u32);
-
-    u32 buffer_size = vertices_size + indices_size;
-    void *memory = platform_malloc(buffer_size);
-
-    memcpy(memory, (void*)mesh->vertices, vertices_size);
-    memcpy((char*)memory + vertices_size, (void*)mesh->indices, indices_size);
-
-    vulkan_mesh->
-
-    platform_free(memory);
-*/
-}
-
-void draw_mesh(Mesh *mesh) {
-    
-}
-
-
-#endif // OPENGL / VULKAN
 
 //
 // Shader
@@ -215,7 +129,7 @@ bool compile_shader(u32 handle, const char *file, int type)
 }
 
 // lines up with enum shader_types
-const u32 file_types[5] = { 
+const u32 opengl_shader_file_types[5] = { 
     GL_VERTEX_SHADER,
     GL_TESS_CONTROL_SHADER,
     GL_TESS_EVALUATION_SHADER,
@@ -239,7 +153,7 @@ void compile_shader(Shader *shader)
     for (u32 i = 0; i < SHADER_TYPE_AMOUNT; i++) {
         if (shader->files[i].memory == 0) continue; // file was not loaded
 
-        if (!compile_shader(shader->handle, (char*)shader->files[i].memory, file_types[i])) {
+        if (!compile_shader(shader->handle, (char*)shader->files[i].memory, opengl_shader_file_types[i])) {
             print("compile_shader() could not compile %s\n", shader->files[i].filepath); 
             return;
         }
