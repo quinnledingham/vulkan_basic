@@ -1207,12 +1207,12 @@ vulkan_copy_buffer_to_image(Vulkan_Info *info, VkBuffer buffer, VkImage image, u
 
 internal void
 vulkan_create_texture_image(Vulkan_Info *info, Bitmap *bitmap) {
-	VkDeviceSize image_size = bitmap->width * bitmap->height * bitmap->channels;
+    VkDeviceSize image_size = bitmap->width * bitmap->height * bitmap->channels;
 
-	VkBuffer staging_buffer;
-	VkDeviceMemory staging_buffer_memory;
+    VkBuffer staging_buffer;
+    VkDeviceMemory staging_buffer_memory;
 
-	vulkan_create_buffer(info->device, info->physical_device, image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
+    vulkan_create_buffer(info->device, info->physical_device, image_size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, staging_buffer, staging_buffer_memory);
 
 	void *data;
 	vkMapMemory(info->device, staging_buffer_memory, 0, image_size, 0, &data);
@@ -1222,10 +1222,10 @@ vulkan_create_texture_image(Vulkan_Info *info, Bitmap *bitmap) {
 	vulkan_create_image(info->device, info->physical_device, bitmap->width, bitmap->height, info->texture_image_format, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, info->texture_image, info->texture_image_memory);
 
 	vulkan_transition_image_layout(info, info->texture_image, info->texture_image_format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-	vulkan_copy_buffer_to_image(info, staging_buffer, info->texture_image, (u32)bitmap->width, (u32)bitmap->height);
-	vulkan_transition_image_layout(info, info->texture_image, info->texture_image_format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    vulkan_copy_buffer_to_image(info, staging_buffer, info->texture_image, (u32)bitmap->width, (u32)bitmap->height);
+    vulkan_transition_image_layout(info, info->texture_image, info->texture_image_format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 
-	vkDestroyBuffer(info->device, staging_buffer, nullptr);
+    vkDestroyBuffer(info->device, staging_buffer, nullptr);
     vkFreeMemory(info->device, staging_buffer_memory, nullptr);
 }
 
@@ -1256,7 +1256,6 @@ vulkan_create_texture_sampler(Vulkan_Info *info) {
 	sampler_info.mipLodBias = 0.0f;
 	sampler_info.minLod = 0.0f;
 	sampler_info.maxLod = 0.0f;
-
 
 	if (vkCreateSampler(info->device, &sampler_info, nullptr, &info->texture_sampler) != VK_SUCCESS) {
         logprint("vulkan_create_texture_sampler()", "failed to create texture sampler\n");
@@ -1407,7 +1406,7 @@ void vulkan_init_mesh(Mesh *mesh) {
 
     vulkan_mesh->vertices_offset = vulkan_update_buffer(&vulkan_info, &vulkan_info.combined_buffer, &vulkan_info.combined_buffer_memory, memory, buffer_size);
     vulkan_mesh->indices_offset = vulkan_mesh->vertices_offset + vertices_size;
-
+    
     platform_free(memory);
     mesh->gpu_info = (void*)vulkan_mesh;
 }

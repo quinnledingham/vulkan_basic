@@ -345,14 +345,12 @@ print_m4x4(Matrix_4x4 matrix)
 inline Matrix_4x4
 get_frustum(float32 l, float32 r, float32 b, float32 t, float32 n, float32 f)
 {
-    if (l == r || t == b || n == f)
-    {
+    if (l == r || t == b || n == f) {
         logprint("get_frustum", "Invalid frustum");
         return {};
     }
     
-    return
-    {
+    return {
         (2.0f * n) / (r - l), 0, 0, 0,
         0, (2.0f * n) / (t - b), 0, 0,
         (r + l) / (r - l), (t + b) / (t - b), (-(f + n)) / (f - n), -1,
@@ -360,24 +358,40 @@ get_frustum(float32 l, float32 r, float32 b, float32 t, float32 n, float32 f)
     };
 }
 
+// Only difference is the y_max's
+#ifdef OPENGL
+
 inline Matrix_4x4
 perspective_projection(float32 fov, float32 aspect_ratio, float32 n, float32 f)
 {
+    // (fov / 2.0f) * (2PI / 360.0f)
+    // x_max = y_max * (window_width / window_height)
     float32 y_max = n * tanf(fov * PI / 360.0f);
     float32 x_max = y_max * aspect_ratio;
     return get_frustum(-x_max, x_max, -y_max, y_max, n, f);
 }
 
+#elif VULKAN
+
+inline Matrix_4x4
+perspective_projection(float32 fov, float32 aspect_ratio, float32 n, float32 f)
+{
+    float32 y_max = n * tanf(fov * PI / 360.0f);
+    float32 x_max = y_max * aspect_ratio;
+    return get_frustum(-x_max, x_max, y_max, -y_max, n, f);
+}
+
+#endif // OPENGL / VULKAN
+
 inline Matrix_4x4
 orthographic_projection(float32 l, float32 r, float32 b, float32 t, float32 n, float32 f)
 {
-    if (l == r || t == b || n == f)
-    {
+    if (l == r || t == b || n == f) {
         logprint("orthographic_projection()", "Invalid arguments");
         return {};
     }
-    return
-    {
+    
+    return {
         2.0f / (r - l), 0, 0, 0,
         0, 2.0f / (t - b), 0, 0,
         0, 0, -2.0f / (f - n), 0,
@@ -386,10 +400,8 @@ orthographic_projection(float32 l, float32 r, float32 b, float32 t, float32 n, f
 }
 
 inline Matrix_4x4
-identity_m4x4()
-{
-    return
-    {
+identity_m4x4() {
+    return {
         1, 0, 0, 0,
         0, 1, 0, 0,
         0, 0, 1, 0,

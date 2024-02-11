@@ -93,7 +93,6 @@ struct Vulkan_Info {
     VkDeviceMemory combined_buffer_memory;
     u32 combined_buffer_offset; // where to enter new bytes
 
-	void *uniform_buffers_mapped;
 	VkDeviceSize uniforms_offset[MAX_FRAMES_IN_FLIGHT];
 	u32 uniform_size;
 
@@ -127,12 +126,9 @@ struct Vulkan_Info {
 global Vulkan_Info vulkan_info;
 
 struct Vulkan_Mesh {
-    //VkBuffer buffer;
-    //VkDeviceMemory memory;
-    //void *mapped_memory;
-
     u32 vertices_offset;
     u32 indices_offset;
-    //u32 uniforms_offsets[vulkan_info.MAX_FRAMES_IN_FLIGHT];
-    //u32 uniform_size; // size of the individual uniforms
+    
+    u32 uniform_offsets[vulkan_info.MAX_FRAMES_IN_FLIGHT];
+    u32 uniform_size; // size of the individual uniforms
 };

@@ -2,39 +2,44 @@
 
 // Platform specific even while use SDL
 #ifdef WINDOWS
-	#pragma message("WINDOWS")
-	#define WIN32_EXTRA_LEAN
-	#define WIN32_EXTRA_LEAN
-	#include <windows.h>
 
-	//
-	// We prefer the discrete GPU in laptops where available
-	//
-	extern "C"
-	{
-	    __declspec(dllexport) DWORD NvOptimusEnablement = 0x01;
-	    __declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x01;
-	}
+#pragma message("WINDOWS")
+#define WIN32_EXTRA_LEAN
+#define WIN32_EXTRA_LEAN
+#include <windows.h>
+
+//
+// We prefer the discrete GPU in laptops where available
+//
+extern "C"
+{
+    __declspec(dllexport) DWORD NvOptimusEnablement = 0x01;
+    __declspec(dllexport) DWORD AmdPowerXpressRequestHighPerformance = 0x01;
+}
 
 #endif // WINDOWS
 
 #ifdef OPENGL
-#pragma message("OPENGL")
-	#include <gl.h>
-	#include <gl.c>
-#elif VULKAN
-	#pragma message("VULKAN")
-	#include <SDL_vulkan.h>
-	#include <vulkan/vulkan.h>
-	
-	// Compiling to SPIR in code
-	#include <shaderc/env.h>
-	#include <shaderc/shaderc.h>
-	#include <shaderc/shaderc.hpp>
-	#include <shaderc/status.h>
-	#include <shaderc/visibility.h>
 
-	#define VK_USE_PLATFORM_WIN32_KHR
+#pragma message("OPENGL")
+#include <gl.h>
+#include <gl.c>
+
+#elif VULKAN
+
+#pragma message("VULKAN")
+#include <SDL_vulkan.h>
+#include <vulkan/vulkan.h>
+	
+// Compiling to SPIR in code
+#include <shaderc/env.h>
+#include <shaderc/shaderc.h>
+#include <shaderc/shaderc.hpp>
+#include <shaderc/status.h>
+#include <shaderc/visibility.h>
+
+#define VK_USE_PLATFORM_WIN32_KHR
+
 #endif // OPENGL / VULKAN
 
 #include <stdarg.h>
@@ -77,26 +82,8 @@ void platform_memory_set(void *dest, s32 value, u32 num_of_bytes) { SDL_memset(d
 #include "print.cpp"
 #include "assets.cpp"
 
-
-const Vertex vertices[8] = {
-	{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-
-    {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-    {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-    {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-    {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-};
-
-const u32 indices[12] = {
-	0, 1, 2, 2, 3, 0,
-    4, 5, 6, 6, 7, 4
-};
-
 Shader shader = {};
-Mesh mesh = {};
+//Mesh mesh = {};
 Uniform_Buffer_Object matrices_ubo = {};
 
 #if OPENGL
@@ -144,20 +131,8 @@ sdl_init_opengl(SDL_Window *sdl_window)
 
 	matrices_ubo = opengl_init_uniform_buffer_object(sizeof(Matrices), 0);
 
-	s32 window_width;
-	s32 window_height;
-	SDL_GetWindowSize(sdl_window, &window_width, &window_height);
-
     u32 tag_uniform_block_index = glGetUniformBlockIndex(shader.handle, "ubo");
     glUniformBlockBinding(shader.handle, tag_uniform_block_index, matrices_ubo.opengl());
-
-    Matrices ubo = {};
-    ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
-    ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 1.0f });
-    ubo.projection = perspective_projection(45.0f, (float32)window_width / (float32)window_height, 0.1f, 10.0f);
-    ubo.projection.E[1][1] *= 1;
-
-    //opengl_update_uniform_buffer_object(matrices_ubo, ubo);
 }
 
 internal void
@@ -356,20 +331,39 @@ int main(int argc, char *argv[]) {
 	sdl_init_opengl(sdl_window);
 #elif VULKAN
     sdl_init_vulkan(&vulkan_info, sdl_window);
+
+    Bitmap yogi = load_bitmap("../assets/bitmaps/yogi.png");
+    opengl_init_bitmap_handle(&yogi, TEXTURE_PARAMETERS_DEFAULT);
+    //free_bitmap(yogi);
 #endif
 
     Matrices ubo = {};
     ubo.model = create_transform_m4x4({ 0.0f, 0.0f, 0.0f }, get_rotation(0.0f, {0, 0, 1}), {1.0f, 1.0f, 1.0f});
     ubo.view = look_at({ 2.0f, 2.0f, 2.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f });
     ubo.projection = perspective_projection(45.0f, (float32)window_width / (float32)window_height, 0.1f, 10.0f);
-    //ubo.projection.E[1][1] *= -1;
-    // @TODO figure out how to make opengl and vulkan get the same result with the same projection matrix
-
     render_update_uniform_buffer_object(matrices_ubo, ubo);
     
 	render_clear_color({ 0.0f, 0.2f, 0.4f, 1.0f });
 
   	// set up test mesh
+    const Vertex vertices[8] = {
+        {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+
+        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
+    };
+
+    const u32 indices[12] = {
+        0, 1, 2, 2, 3, 0,
+        4, 5, 6, 6, 7, 4
+    };
+
+    Mesh mesh = {};
 	mesh.vertices_count = 8;
 	mesh.indices_count = 12;
 	mesh.vertices = ARRAY_MALLOC(Vertex, mesh.vertices_count);

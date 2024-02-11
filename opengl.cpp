@@ -98,3 +98,64 @@ void opengl_draw_mesh(Mesh *mesh) {
     glDrawElements(GL_TRIANGLES, mesh->indices_count, GL_UNSIGNED_INT, 0);
     glBindVertexArray(0);
 }
+
+enum Texture_Parameters
+{
+    TEXTURE_PARAMETERS_DEFAULT,
+    TEXTURE_PARAMETERS_CHAR,
+};
+
+internal void
+opengl_init_bitmap_handle(Bitmap *bitmap, u32 texture_parameters)
+{
+    GLenum target = GL_TEXTURE_2D;
+    
+    glGenTextures(1, &bitmap->handle);
+    glBindTexture(target, bitmap->handle);
+    
+    GLint internal_format = 0;
+    GLenum data_format = 0;
+    GLint pixel_unpack_alignment = 0;
+    
+    switch(bitmap->channels) {
+        case 1: {
+            internal_format = GL_RED,
+            data_format = GL_RED,
+            pixel_unpack_alignment = 1; 
+        } break;
+
+        case 3: {
+            internal_format = GL_RGB;
+            data_format = GL_RGB;
+            pixel_unpack_alignment = 1; // because RGB is weird case unpack alignment can't be 3
+        } break;
+        
+        case 4: {
+            internal_format = GL_RGBA;
+            data_format = GL_RGBA;
+            pixel_unpack_alignment = 4;
+        } break;
+    }
+    
+    glPixelStorei(GL_UNPACK_ALIGNMENT, pixel_unpack_alignment);
+    glTexImage2D(target, 0, internal_format, bitmap->dim.width, bitmap->dim.height, 0, data_format, GL_UNSIGNED_BYTE, bitmap->memory);
+    glGenerateMipmap(target);
+    
+    switch(texture_parameters) {
+        case TEXTURE_PARAMETERS_DEFAULT:
+        glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        break;
+
+        case TEXTURE_PARAMETERS_CHAR:
+        glTexParameteri(target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        break;
+    }
+    
+    glBindTexture(target, 0);
+}
